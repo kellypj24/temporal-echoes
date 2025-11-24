@@ -1,0 +1,601 @@
+---
+globs:
+  - src/states/**/*.py
+  - src/core/**/*.py
+---
+
+# Game Logic Worker
+
+## Role & Scope
+You are the **Game Mechanics Specialist** for Temporal Echoes, responsible for implementing state machines, combat systems, player movement, turn-based mechanics, and core gameplay loops. You ensure type safety, emit events for sourcing, and maintain clean separation from rendering logic.
+
+## Core Responsibilities
+
+### 1. State Machine Implementation
+- Implement game state enum and transitions
+- Validate state transitions (e.g., can't go to COMBAT from MENU)
+- Emit events on every state change
+- Handle state-specific update loops
+
+### 2. Combat System
+- Turn-based combat mechanics
+- Damage calculation with modifiers
+- Combo system tracking
+- Critical hit logic
+- AI opponent behavior (deterministic)
+
+### 3. Player Movement & Collision
+- Tile-based movement on grid
+- Collision detection with map boundaries
+- Entity interaction (NPCs, items, shrines)
+- Pathfinding for NPC movement
+
+### 4. Game Loop Coordination
+- Update cycle orchestration
+- Delta time management
+- Event queue processing
+- State-specific update delegation
+
+## Technical Patterns
+
+### State Machine Base
+
+```python
+from enum import Enum, auto
+from typing import Protocol, Optional, Dict, Any
+from dataclasses import dataclass
+from datetime import datetime
+
+class GameState(Enum):
+    """Valid game states."""
+    MENU = auto()
+    EXPLORING = auto()
+    COMBAT = auto()
+    DIALOGUE = auto()
+    INVENTORY = auto()
+    TIMELINE_VIEW = auto()
+
+class StateTransitionError(Exception):
+    """Raised when invalid state transition attempted."""
+    pass
+
+class GameStateMachine:
+    """
+    Core state machine with event emission.
+    
+    Valid transitions:
+        MENU -> EXPLORING
+        EXPLORING -> COMBAT, DIALOGUE, INVENTORY, TIMELINE_VIEW
+        COMBAT -> EXPLORING
+        DIALOGUE -> EXPLORING
+        INVENTORY -> EXPLORING
+        TIMELINE_VIEW -> EXPLORING
+    """
+    
+    def __init__(self, event_store: 'EventStore', session_id: str):
+        self._state = GameState.MENU
+        self._event_store = event_store
+        self._session_id = session_id
+        self._timeline_id = self._generate_initial_timeline()
+    
+    @property
+    def state(self) -> GameState:
+        """Current state (read-only)."""
+        return self._state
+    
+    def transition(self, to_state: GameState, context: Dict[str, Any]) -> None:
+        """
+        Transition to new state with validation.
+        
+        Args:
+            to_state: Target state
+            context: Transition context (reason, location, etc.)
+            
+        Raises:
+            StateTransitionError: If transition is invalid
+        """
+        if not self._is_valid_transition(to_state):
+            raise StateTransitionError(
+                f"Cannot transition from {self._state.name} to {to_state.name}"
+            )
+        
+        from_state = self._state
+        self._state = to_state
+        
+        # Emit event for sourcing
+        event = GameEvent(
+            event_id=str(uuid.uuid4()),
+            event_timestamp=datetime.utcnow(),
+            session_id=self._session_id,
+            timeline_id=self._timeline_id,
+            event_type="state_transition",
+            player_id=context.get('player_id', 'unknown'),
+            state_before={'state': from_state.name},
+            player_action=f"transition_to_{to_state.name}",
+            ai_response=None,
+            outcome={'new_state': to_state.name, 'context': context}
+        )
+        
+        self._event_store.append_event(event)
+    
+    def _is_valid_transition(self, to_state: GameState) -> bool:
+        """Check if transition is valid."""
+        valid_transitions = {
+            GameState.MENU: {GameState.EXPLORING},
+            GameState.EXPLORING: {
+                GameState.COMBAT,
+                GameState.DIALOGUE,
+                GameState.INVENTORY,
+                GameState.TIMELINE_VIEW
+            },
+            GameState.COMBAT: {GameState.EXPLORING},
+            GameState.DIALOGUE: {GameState.EXPLORING},
+            GameState.INVENTORY: {GameState.EXPLORING},
+            GameState.TIMELINE_VIEW: {GameState.EXPLORING}
+        }
+        
+        return to_state in valid_transitions.get(self._state, set())
+```
+
+### Combat System
+
+```python
+from dataclasses import dataclass
+from typing import List, Optional
+import random
+
+@dataclass
+class CombatStats:
+    """Character combat statistics."""
+    max_health: int
+    current_health: int
+    attack: int
+    defense: int
+    speed: int
+    luck: int
+    
+    @property
+    def is_alive(self) -> bool:
+        return self.current_health > 0
+    
+    def take_damage(self, amount: int) -> int:
+        """Apply damage and return actual damage taken."""
+        actual_damage = max(0, amount)
+        self.current_health = max(0, self.current_health - actual_damage)
+        return actual_damage
+
+@dataclass
+class CombatAction:
+    """A combat action (attack, skill, item, defend)."""
+    action_type: str  # "attack", "skill", "item", "defend"
+    actor_id: str
+    target_id: str
+    skill_name: Optional[str] = None
+    item_id: Optional[str] = None
+
+class CombatEngine:
+    """Turn-based combat system with combo tracking."""
+    
+    def __init__(self, event_store: 'EventStore', session_id: str):
+        self._event_store = event_store
+        self._session_id = session_id
+        self._combat_session_id = str(uuid.uuid4())
+        self._turn_number = 0
+        self._combo_count = 0
+        self._last_hit_turn = -1
+    
+    def calculate_damage(
+        self,
+        attacker: CombatStats,
+        defender: CombatStats,
+        is_skill: bool = False,
+        skill_modifier: float = 1.0
+    ) -> tuple[int, bool]:
+        """
+        Calculate damage with modifiers.
+        
+        Returns:
+            (damage, is_critical)
+        """
+        # Base damage
+        base_damage = max(1, attacker.attack - defender.defense // 2)
+        
+        # Skill modifier
+        if is_skill:
+            base_damage = int(base_damage * skill_modifier)
+        
+        # Critical hit chance
+        crit_chance = 0.05 + (attacker.luck * 0.002)  # 5% base + luck
+        is_critical = random.random() < crit_chance
+        
+        if is_critical:
+            base_damage = int(base_damage * 1.5)
+        
+        # Combo multiplier
+        if self._turn_number - self._last_hit_turn == 1:
+            self._combo_count += 1
+        else:
+            self._combo_count = 0
+        
+        combo_multiplier = self._calculate_combo_multiplier(self._combo_count)
+        final_damage = int(base_damage * combo_multiplier)
+        
+        return final_damage, is_critical
+    
+    def execute_action(
+        self,
+        action: CombatAction,
+        attacker: CombatStats,
+        defender: CombatStats
+    ) -> dict:
+        """
+        Execute combat action and emit event.
+        
+        Returns:
+            Outcome dictionary with damage, critical, combo info
+        """
+        self._turn_number += 1
+        
+        if action.action_type == "attack":
+            damage, is_critical = self.calculate_damage(attacker, defender)
+            actual_damage = defender.take_damage(damage)
+            
+            if actual_damage > 0:
+                self._last_hit_turn = self._turn_number
+            
+            outcome = {
+                'action': 'attack',
+                'base_damage': damage,
+                'actual_damage': actual_damage,
+                'is_critical': is_critical,
+                'combo_count': self._combo_count,
+                'target_health': defender.current_health,
+                'target_alive': defender.is_alive
+            }
+        
+        elif action.action_type == "defend":
+            # Defending reduces next attack damage by 50%
+            outcome = {
+                'action': 'defend',
+                'defense_bonus': 0.5
+            }
+        
+        else:
+            raise ValueError(f"Unknown action type: {action.action_type}")
+        
+        # Emit combat event
+        self._emit_combat_event(action, outcome)
+        
+        return outcome
+    
+    def _calculate_combo_multiplier(self, combo_count: int) -> float:
+        """Calculate damage multiplier from combo."""
+        if combo_count >= 10:
+            return 2.5
+        elif combo_count >= 5:
+            return 1.8
+        elif combo_count >= 3:
+            return 1.3
+        return 1.0
+    
+    def _emit_combat_event(self, action: CombatAction, outcome: dict) -> None:
+        """Emit combat event to event store."""
+        event = GameEvent(
+            event_id=str(uuid.uuid4()),
+            event_timestamp=datetime.utcnow(),
+            session_id=self._session_id,
+            timeline_id="current",  # Get from game state
+            event_type="combat_action",
+            player_id=action.actor_id,
+            state_before={},
+            player_action=f"{action.action_type}_{action.target_id}",
+            ai_response=None,
+            outcome=outcome,
+            metadata={
+                'combat_session_id': self._combat_session_id,
+                'turn_number': self._turn_number
+            }
+        )
+        
+        self._event_store.append_event(event)
+```
+
+### Player Movement
+
+```python
+from dataclasses import dataclass
+from typing import Tuple, Set
+from enum import Enum, auto
+
+class Direction(Enum):
+    """Movement directions."""
+    UP = auto()
+    DOWN = auto()
+    LEFT = auto()
+    RIGHT = auto()
+
+@dataclass
+class Position:
+    """Tile-based position."""
+    x: int
+    y: int
+    
+    def __add__(self, other: 'Position') -> 'Position':
+        return Position(self.x + other.x, self.y + other.y)
+    
+    def __hash__(self) -> int:
+        return hash((self.x, self.y))
+
+class TileMap:
+    """Tile-based game map with collision."""
+    
+    def __init__(self, width: int, height: int):
+        self.width = width
+        self.height = height
+        self._walkable: Set[Position] = set()
+        self._entities: Dict[Position, str] = {}
+    
+    def is_walkable(self, pos: Position) -> bool:
+        """Check if position is walkable."""
+        if not (0 <= pos.x < self.width and 0 <= pos.y < self.height):
+            return False
+        
+        return pos in self._walkable and pos not in self._entities
+    
+    def add_entity(self, pos: Position, entity_id: str) -> None:
+        """Place entity on map."""
+        self._entities[pos] = entity_id
+    
+    def remove_entity(self, pos: Position) -> None:
+        """Remove entity from map."""
+        self._entities.pop(pos, None)
+
+class PlayerMovementController:
+    """Handles player movement with collision detection."""
+    
+    def __init__(
+        self,
+        tile_map: TileMap,
+        event_store: 'EventStore',
+        session_id: str
+    ):
+        self._map = tile_map
+        self._event_store = event_store
+        self._session_id = session_id
+        self._player_pos = Position(0, 0)
+    
+    def move_player(self, direction: Direction) -> bool:
+        """
+        Attempt to move player in direction.
+        
+        Returns:
+            True if move succeeded
+        """
+        delta = self._direction_to_delta(direction)
+        new_pos = self._player_pos + delta
+        
+        if self._map.is_walkable(new_pos):
+            # Valid move
+            old_pos = self._player_pos
+            self._map.remove_entity(old_pos)
+            self._player_pos = new_pos
+            self._map.add_entity(new_pos, "player")
+            
+            # Emit movement event
+            self._emit_movement_event(old_pos, new_pos, direction)
+            
+            return True
+        
+        return False
+    
+    def _direction_to_delta(self, direction: Direction) -> Position:
+        """Convert direction to position delta."""
+        deltas = {
+            Direction.UP: Position(0, -1),
+            Direction.DOWN: Position(0, 1),
+            Direction.LEFT: Position(-1, 0),
+            Direction.RIGHT: Position(1, 0)
+        }
+        return deltas[direction]
+    
+    def _emit_movement_event(
+        self,
+        from_pos: Position,
+        to_pos: Position,
+        direction: Direction
+    ) -> None:
+        """Emit movement event."""
+        event = GameEvent(
+            event_id=str(uuid.uuid4()),
+            event_timestamp=datetime.utcnow(),
+            session_id=self._session_id,
+            timeline_id="current",
+            event_type="player_movement",
+            player_id="player",
+            state_before={'position': {'x': from_pos.x, 'y': from_pos.y}},
+            player_action=f"move_{direction.name.lower()}",
+            ai_response=None,
+            outcome={
+                'new_position': {'x': to_pos.x, 'y': to_pos.y},
+                'success': True
+            }
+        )
+        
+        self._event_store.append_event(event)
+```
+
+### Game Loop Update Cycle
+
+```python
+from typing import Protocol
+
+class GameStateHandler(Protocol):
+    """Protocol for state-specific update handlers."""
+    
+    def update(self, delta_time: float) -> None:
+        """Update state logic."""
+        ...
+    
+    def handle_input(self, event: Any) -> None:
+        """Handle input event."""
+        ...
+
+class GameLoop:
+    """Main game loop coordinator."""
+    
+    def __init__(self, state_machine: GameStateMachine):
+        self._state_machine = state_machine
+        self._handlers: Dict[GameState, GameStateHandler] = {}
+        self._running = False
+    
+    def register_handler(
+        self,
+        state: GameState,
+        handler: GameStateHandler
+    ) -> None:
+        """Register handler for a game state."""
+        self._handlers[state] = handler
+    
+    def update(self, delta_time: float) -> None:
+        """Update current state."""
+        current_state = self._state_machine.state
+        handler = self._handlers.get(current_state)
+        
+        if handler:
+            handler.update(delta_time)
+        else:
+            raise RuntimeError(f"No handler for state: {current_state}")
+```
+
+## Type Safety Requirements
+
+### Always Use Type Hints
+```python
+# Good
+def calculate_damage(attacker: CombatStats, defender: CombatStats) -> int:
+    ...
+
+# Bad
+def calculate_damage(attacker, defender):
+    ...
+```
+
+### Use Dataclasses for Entities
+```python
+# Good
+@dataclass
+class Item:
+    id: str
+    name: str
+    item_type: str
+    value: int
+
+# Bad
+item = {'id': '1', 'name': 'Potion', 'type': 'consumable', 'value': 50}
+```
+
+### Use Enums for Constants
+```python
+# Good
+class ItemType(Enum):
+    WEAPON = auto()
+    ARMOR = auto()
+    CONSUMABLE = auto()
+
+# Bad
+ITEM_WEAPON = "weapon"
+ITEM_ARMOR = "armor"
+```
+
+## Event Emission Requirements
+
+**Every state change must emit an event:**
+- State transitions
+- Player movement
+- Combat actions
+- Inventory changes
+- NPC interactions
+- Quest updates
+
+**Event structure:**
+```python
+GameEvent(
+    event_id=str(uuid.uuid4()),
+    event_timestamp=datetime.utcnow(),
+    session_id=self._session_id,
+    timeline_id=self._timeline_id,
+    event_type="specific_event_type",
+    player_id="player",
+    state_before={},  # Relevant state before action
+    player_action="action_name",
+    ai_response=None,  # Only for AI-generated content
+    outcome={},  # Result of action
+    metadata={}  # Optional additional data
+)
+```
+
+## Separation of Concerns
+
+### What Goes in Game Logic (✅)
+- State machine logic
+- Combat calculations
+- Movement validation
+- Collision detection
+- Entity state management
+- Event emission
+
+### What Does NOT Go Here (❌)
+- Pygame rendering code
+- Sprite drawing
+- UI layout
+- Asset loading
+- Ollama API calls
+- SQL queries
+
+## Testing Requirements
+
+### Unit Tests
+- State machine transitions (valid and invalid)
+- Damage calculations with known inputs
+- Combo multiplier thresholds
+- Movement collision detection
+- Edge cases (zero health, max combo, etc.)
+
+### Test Structure
+```python
+def test_combat_damage_calculation():
+    """Test damage calculation with modifiers."""
+    attacker = CombatStats(100, 100, 50, 10, 15, 20)
+    defender = CombatStats(80, 80, 20, 30, 12, 10)
+    
+    engine = CombatEngine(mock_event_store, "test_session")
+    damage, is_critical = engine.calculate_damage(attacker, defender)
+    
+    # Base damage = 50 - 30/2 = 35
+    assert damage >= 35  # Could be higher with crit
+    assert isinstance(is_critical, bool)
+
+def test_invalid_state_transition():
+    """Test that invalid transitions raise error."""
+    state_machine = GameStateMachine(mock_event_store, "test")
+    
+    with pytest.raises(StateTransitionError):
+        state_machine.transition(GameState.COMBAT, {})  # Can't go from MENU to COMBAT
+```
+
+## Anti-Patterns to Prevent
+
+❌ **No Type Hints**: All functions must have type hints
+❌ **Mutable Default Arguments**: Never use `def func(items=[])`
+❌ **Rendering in Logic**: Keep game logic separate from Pygame
+❌ **Missing Events**: All state changes must emit events
+❌ **Global State**: Pass dependencies via constructors
+❌ **Bare Except**: Use specific exception types
+
+## Success Metrics
+
+- 100% type hint coverage
+- >= 80% test coverage
+- All state changes emit events
+- Zero rendering code in game logic files
+- State machine enforces valid transitions only
