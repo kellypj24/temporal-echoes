@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# Poetry
+poetry.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type Checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# Linting
+.ruff_cache/
+
+# Databases
+data/*.db
+data/*.duckdb
+data/*.db-shm
+data/*.db-wal
+*.sqlite
+*.sqlite3
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+
+# Logs
+logs/
+*.log
+
+# Game Assets (if large)
+# Uncomment if you don't want to commit assets
+# assets/audio/*.mp3
+# assets/audio/*.ogg
+# assets/sprites/*.png
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+.dockerignore
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
