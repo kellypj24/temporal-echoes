@@ -87,28 +87,28 @@ dbt-full: ## Run dbt models and tests
 
 docker-build: ## Build Docker images
 	@echo "$(BLUE)Building Docker images...$(NC)"
-	docker-compose build
+	docker compose build
 	@echo "$(GREEN)✓ Docker images built$(NC)"
 
 docker-up: ## Start Docker containers
 	@echo "$(BLUE)Starting Docker containers...$(NC)"
-	docker-compose up -d
+	docker compose up -d
 	@echo "$(GREEN)✓ Containers started$(NC)"
 	@echo "$(BLUE)Ollama available at http://localhost:11434$(NC)"
 
 docker-down: ## Stop Docker containers
 	@echo "$(BLUE)Stopping Docker containers...$(NC)"
-	docker-compose down
+	docker compose down
 	@echo "$(GREEN)✓ Containers stopped$(NC)"
 
 docker-logs: ## View Docker container logs
-	docker-compose logs -f
+	docker compose logs -f
 
 docker-shell-game: ## Open shell in game container
-	docker-compose exec game /bin/bash
+	docker compose exec game /bin/bash
 
 docker-shell-ollama: ## Open shell in Ollama container
-	docker-compose exec ollama /bin/bash
+	docker compose exec ollama /bin/bash
 
 clean: ## Clean up generated files
 	@echo "$(BLUE)Cleaning up...$(NC)"
@@ -159,5 +159,5 @@ info: ## Show project information
 	@echo "Project path: $$(pwd)"
 	@echo ""
 	@echo "Docker status:"
-	@docker-compose ps 2>/dev/null || echo "  Not running"
+	@docker compose ps 2>/dev/null || echo "  Not running"
 
