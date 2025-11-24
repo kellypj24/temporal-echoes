@@ -7,4 +7,17 @@ This package contains the foundational architecture components:
 - Configuration
 """
 
-__all__ = ["events", "persistence"]
+from .events import EventTypes, GameEvent
+from .exceptions import StateTransitionError, TemporalEchoesError
+from .persistence import EventStore
+from .state_machine import GameState, GameStateMachine
+
+__all__ = [
+    "EventTypes",
+    "GameEvent",
+    "EventStore",
+    "StateTransitionError",
+    "TemporalEchoesError",
+    "GameState",
+    "GameStateMachine",
+]

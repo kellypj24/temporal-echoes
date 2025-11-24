@@ -14,6 +14,7 @@ Constitution Principles:
 - #3: Type safety (type hints on all functions)
 """
 
+import json
 import logging
 from datetime import UTC, datetime
 from enum import Enum, auto
@@ -235,16 +236,19 @@ class GameStateMachine:
 
         # Emit event BEFORE state change (Research Topic 3)
         # This ensures event log accurately reflects the transition point
+        event_data_dict = {
+            "from": from_state.name,
+            "to": to_state.name,
+            "context": context or {},
+        }
+
         event = GameEvent(
             event_type=EventTypes.STATE_TRANSITION,
             session_id=self.session_id,
             timeline_id=self.timeline_id,
             aggregate_id=f"game_{self.session_id}",
             aggregate_type="game_state",
-            event_data=(
-                f'{{"from": "{from_state.name}", "to": "{to_state.name}", '
-                f'"context": {context or {}}}}'
-            ),
+            event_data=json.dumps(event_data_dict),
             metadata=f'{{"timestamp": "{datetime.now(UTC).isoformat()}"}}',
         )
 

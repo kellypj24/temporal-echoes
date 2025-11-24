@@ -17,7 +17,7 @@ Constitution Principles Tested:
 """
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,7 +25,6 @@ from src.core.events import EventTypes, GameEvent
 from src.core.exceptions import StateTransitionError
 from src.core.persistence import EventStore
 from src.core.state_machine import GameState, GameStateMachine
-
 
 # ============================================================================
 # Fixtures
@@ -133,7 +132,7 @@ def test_state_machine_empty_timeline_id(event_store: EventStore) -> None:
 def test_state_machine_logging_on_init(event_store: EventStore) -> None:
     """Test that GameStateMachine logs initialization."""
     with patch("src.core.state_machine.logger") as mock_logger:
-        machine = GameStateMachine(
+        _ = GameStateMachine(
             event_store=event_store,
             session_id="test_session",
             timeline_id="test_timeline",
@@ -331,8 +330,8 @@ def test_invalid_transition_no_event_emitted(
     assert event_store.get_event_count() == initial_count
 
 
-def test_transition_inventory_to_combat_invalid(event_store: EventStore) -> None:
-    """Test that INVENTORY cannot transition to COMBAT directly."""
+def test_transition_inventory_to_dialogue_invalid(event_store: EventStore) -> None:
+    """Test that INVENTORY cannot transition to DIALOGUE directly."""
     machine = GameStateMachine(
         event_store=event_store,
         session_id="test_session",
@@ -341,10 +340,10 @@ def test_transition_inventory_to_combat_invalid(event_store: EventStore) -> None
     )
 
     with pytest.raises(StateTransitionError) as exc_info:
-        machine.transition(GameState.COMBAT)
+        machine.transition(GameState.DIALOGUE)
 
     assert exc_info.value.from_state == "INVENTORY"
-    assert exc_info.value.to_state == "COMBAT"
+    assert exc_info.value.to_state == "DIALOGUE"
 
 
 def test_transition_game_over_to_exploring_invalid(event_store: EventStore) -> None:
@@ -615,7 +614,7 @@ def test_exploring_is_central_hub() -> None:
         if state != GameState.EXPLORING:
             assert (
                 len(transitions) <= exploring_transitions
-            ), f"EXPLORING should be the hub state with most transitions"
+            ), "EXPLORING should be the hub state with most transitions"
 
 
 # ============================================================================
