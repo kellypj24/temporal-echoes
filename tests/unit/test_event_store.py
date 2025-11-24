@@ -199,7 +199,8 @@ def test_events_are_immutable(in_memory_store):
     """Test that GameEvent dataclass is frozen (immutable)."""
     event = create_test_event()
 
-    with pytest.raises(Exception):  # FrozenInstanceError
+    # Frozen dataclasses raise FrozenInstanceError (subclass of AttributeError)
+    with pytest.raises((AttributeError, TypeError)):
         event.event_type = "ModifiedType"
 
 
@@ -239,11 +240,11 @@ def test_get_events_empty_timeline(in_memory_store):
 def test_get_events_multiple_timelines(in_memory_store):
     """Test that different timelines are isolated."""
     # Add events to timeline A
-    for i in range(3):
+    for _ in range(3):
         in_memory_store.append_event(create_test_event(timeline_id="timeline_a"))
 
     # Add events to timeline B
-    for i in range(5):
+    for _ in range(5):
         in_memory_store.append_event(create_test_event(timeline_id="timeline_b"))
 
     events_a = in_memory_store.get_events_by_timeline("timeline_a")
@@ -261,12 +262,12 @@ def test_get_events_multiple_timelines(in_memory_store):
 def test_get_events_by_session(in_memory_store):
     """Test retrieving all events for a session (across timelines)."""
     # Add events for session 1 across two timelines
-    for i in range(3):
+    for _ in range(3):
         in_memory_store.append_event(
             create_test_event(session_id="sess_001", timeline_id="main")
         )
 
-    for i in range(2):
+    for _ in range(2):
         in_memory_store.append_event(
             create_test_event(session_id="sess_001", timeline_id="branch_1")
         )
@@ -296,10 +297,10 @@ def test_get_event_count_total(populated_store):
 
 def test_get_event_count_by_timeline(in_memory_store):
     """Test getting event count for specific timeline."""
-    for i in range(7):
+    for _ in range(7):
         in_memory_store.append_event(create_test_event(timeline_id="main"))
 
-    for i in range(3):
+    for _ in range(3):
         in_memory_store.append_event(create_test_event(timeline_id="branch"))
 
     count_main = in_memory_store.get_event_count(timeline_id="main")
@@ -450,7 +451,7 @@ def test_large_event_batch(in_memory_store):
     start_time = time.perf_counter()
 
     # Append 1000 events
-    for i in range(1000):
+    for _ in range(1000):
         in_memory_store.append_event(create_test_event())
 
     elapsed = time.perf_counter() - start_time

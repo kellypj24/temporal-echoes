@@ -99,6 +99,7 @@ class EventStore:
         - aggregate_id/type for future read models
         - Indexes for timeline queries
         """
+        assert self._conn is not None, "Connection must be initialized"
         with self._transaction():
             # Main events table
             self._conn.execute(
@@ -120,21 +121,21 @@ class EventStore:
             # Indexes for fast timeline queries
             self._conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_timeline_id 
+                CREATE INDEX IF NOT EXISTS idx_timeline_id
                 ON game_events(timeline_id, event_timestamp)
             """
             )
 
             self._conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_session_id 
+                CREATE INDEX IF NOT EXISTS idx_session_id
                 ON game_events(session_id)
             """
             )
 
             self._conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_event_type 
+                CREATE INDEX IF NOT EXISTS idx_event_type
                 ON game_events(event_type)
             """
             )
@@ -142,7 +143,7 @@ class EventStore:
             # Index for CQRS aggregates (Phase 2+)
             self._conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_aggregate 
+                CREATE INDEX IF NOT EXISTS idx_aggregate
                 ON game_events(aggregate_id, aggregate_type)
             """
             )
@@ -150,7 +151,7 @@ class EventStore:
         logger.debug("Event store schema initialized")
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self) -> None:  # type: ignore[misc]
         """
         Context manager for transactions (Constitution Principle #12).
 
@@ -161,6 +162,7 @@ class EventStore:
             ...     store._conn.execute(...)
             ...     store._conn.execute(...)
         """
+        assert self._conn is not None, "Connection not initialized"
         try:
             yield
             self._conn.commit()
@@ -183,6 +185,7 @@ class EventStore:
         Performance:
             Target < 10ms p95 latency (DEC-0001)
         """
+        assert self._conn is not None, "Connection not initialized"
         if not isinstance(event, GameEvent):
             raise ValueError(f"Expected GameEvent, got {type(event)}")
 
@@ -226,6 +229,7 @@ class EventStore:
         Performance:
             Fast due to idx_timeline_id index on (timeline_id, event_timestamp)
         """
+        assert self._conn is not None, "Connection not initialized"
         query = """
             SELECT * FROM game_events
             WHERE timeline_id = ?
@@ -269,6 +273,7 @@ class EventStore:
         Returns:
             List of GameEvent objects in chronological order
         """
+        assert self._conn is not None, "Connection not initialized"
         query = """
             SELECT * FROM game_events
             WHERE session_id = ?
@@ -309,6 +314,7 @@ class EventStore:
         Returns:
             Total number of events
         """
+        assert self._conn is not None, "Connection not initialized"
         if timeline_id:
             cursor = self._conn.execute(
                 "SELECT COUNT(*) as count FROM game_events WHERE timeline_id = ?",
@@ -318,7 +324,7 @@ class EventStore:
             cursor = self._conn.execute("SELECT COUNT(*) as count FROM game_events")
 
         result = cursor.fetchone()
-        return result["count"]
+        return int(result["count"])
 
     def create_timeline(
         self,
@@ -407,10 +413,10 @@ class EventStore:
             self._conn = None
             logger.info("EventStore connection closed")
 
-    def __enter__(self):
+    def __enter__(self) -> "EventStore":
         """Context manager support."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         """Context manager cleanup."""
         self.close()
