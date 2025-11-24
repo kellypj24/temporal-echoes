@@ -64,31 +64,59 @@ run-debug: ## Run the game in debug mode
 	@echo "$(BLUE)Starting Temporal Echoes (DEBUG)...$(NC)"
 	DEBUG=1 poetry run python -m src.main
 
-dbt-init: ## Initialize dbt project structure
-	@echo "$(BLUE)Initializing dbt structure...$(NC)"
-	@mkdir -p dbt/models/staging dbt/models/intermediate dbt/models/analytics
-	@mkdir -p dbt/tests dbt/macros
-	@touch dbt/models/staging/.gitkeep
-	@touch dbt/models/intermediate/.gitkeep
-	@touch dbt/models/analytics/.gitkeep
-	@touch dbt/tests/.gitkeep
-	@touch dbt/macros/.gitkeep
+dbt-init: ## Initialize dbt project structure (dbt best practices)
+	@echo "$(BLUE)Initializing dbt project...$(NC)"
 	@if [ ! -f dbt/dbt_project.yml ]; then \
-		echo "Creating dbt_project.yml..."; \
-		echo "name: 'temporal_echoes_analytics'" > dbt/dbt_project.yml; \
-		echo "version: '1.0.0'" >> dbt/dbt_project.yml; \
-		echo "config-version: 2" >> dbt/dbt_project.yml; \
+		echo "Creating dbt project structure following dbt conventions..."; \
+		mkdir -p dbt/models/staging dbt/models/intermediate dbt/models/analytics; \
+		mkdir -p dbt/tests dbt/macros dbt/seeds dbt/snapshots dbt/analyses; \
+		echo "# Place source CSV files here" > dbt/seeds/.gitkeep; \
+		echo "# Place snapshot definitions here" > dbt/snapshots/.gitkeep; \
+		echo "# Place ad-hoc analyses here" > dbt/analyses/.gitkeep; \
+		curl -fsSL https://raw.githubusercontent.com/dbt-labs/dbt-starter-project/main/.gitignore > dbt/.gitignore 2>/dev/null || \
+		echo "target/\ndbt_packages/\nlogs/" > dbt/.gitignore; \
+		poetry run python -c "import yaml; \
+config = { \
+  'name': 'temporal_echoes_analytics', \
+  'version': '1.0.0', \
+  'config-version': 2, \
+  'profile': 'temporal_echoes_analytics', \
+  'model-paths': ['models'], \
+  'analysis-paths': ['analyses'], \
+  'test-paths': ['tests'], \
+  'seed-paths': ['seeds'], \
+  'macro-paths': ['macros'], \
+  'snapshot-paths': ['snapshots'], \
+  'target-path': 'target', \
+  'clean-targets': ['target', 'dbt_packages'], \
+  'models': { \
+    'temporal_echoes_analytics': { \
+      'staging': {'+materialized': 'view', '+schema': 'staging'}, \
+      'intermediate': {'+materialized': 'table', '+schema': 'intermediate'}, \
+      'analytics': {'+materialized': 'incremental', '+schema': 'analytics'} \
+    } \
+  } \
+}; \
+print(yaml.dump(config, default_flow_style=False))" > dbt/dbt_project.yml; \
+		poetry run python -c "import yaml; \
+config = { \
+  'temporal_echoes_analytics': { \
+    'target': 'dev', \
+    'outputs': { \
+      'dev': { \
+        'type': 'duckdb', \
+        'path': '../data/analytics.duckdb', \
+        'schema': 'analytics', \
+        'threads': 4 \
+      } \
+    } \
+  } \
+}; \
+print(yaml.dump(config, default_flow_style=False))" > dbt/profiles.yml; \
+		echo "$(GREEN)✓ dbt project initialized with best practices$(NC)"; \
+	else \
+		echo "$(GREEN)✓ dbt project already exists$(NC)"; \
 	fi
-	@if [ ! -f dbt/profiles.yml ]; then \
-		echo "Creating profiles.yml..."; \
-		echo "temporal_echoes:" > dbt/profiles.yml; \
-		echo "  target: dev" >> dbt/profiles.yml; \
-		echo "  outputs:" >> dbt/profiles.yml; \
-		echo "    dev:" >> dbt/profiles.yml; \
-		echo "      type: duckdb" >> dbt/profiles.yml; \
-		echo "      path: ../data/analytics.duckdb" >> dbt/profiles.yml; \
-	fi
-	@echo "$(GREEN)✓ dbt structure initialized$(NC)"
 
 dbt-run: ## Run dbt models
 	@echo "$(BLUE)Running dbt models...$(NC)"

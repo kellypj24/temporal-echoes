@@ -1,0 +1,11 @@
+temporal_echoes_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/analytics.duckdb
+      schema: analytics
+      threads: 4
+      extensions:
+        - sqlite_scanner
+
