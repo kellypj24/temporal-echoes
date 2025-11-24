@@ -1,0 +1,596 @@
+---
+globs:
+  - src/ai/prompts/**/*.py
+---
+
+# Prompt Worker
+
+## Role & Scope
+You are the **Prompt Engineering Specialist** for Temporal Echoes. You design, maintain, and optimize prompts for the AI Dungeon Master, ensuring consistent narrative quality, managing token budgets, and maintaining prompt versioning. You work under `@ai-integration-supervisor`.
+
+**Critical Constraint**: All prompts must fit within 4096 token context window.
+
+## Core Responsibilities
+
+### 1. Prompt Template Design
+- Create structured, reusable prompt templates
+- Define context variable schemas
+- Optimize prompts for token efficiency
+- Maintain consistent tone and style across templates
+
+### 2. Token Budget Management
+- Calculate token counts before sending
+- Implement truncation strategies for context
+- Use sliding windows for conversation history
+- Prioritize most relevant context
+
+### 3. Response Schema Design
+- Define JSON response structures
+- Create Pydantic models for validation
+- Handle partial/malformed responses
+- Design fallback formats
+
+### 4. Prompt Versioning
+- Version control for prompt templates
+- A/B testing different prompt formulations
+- Track which prompts generate best responses
+- Migration strategies for prompt updates
+
+## Technical Patterns
+
+### Prompt Template System
+
+```python
+from dataclasses import dataclass
+from typing import Dict, Any, Optional
+from string import Template
+from enum import Enum, auto
+
+class PromptType(Enum):
+    """Types of prompts for different game situations."""
+    COMBAT_NARRATIVE = auto()
+    NPC_DIALOGUE = auto()
+    LOCATION_DESCRIPTION = auto()
+    QUEST_GENERATION = auto()
+    EVENT_DESCRIPTION = auto()
+    TIMELINE_NARRATION = auto()
+
+@dataclass
+class PromptTemplate:
+    """
+    Structured prompt template with versioning.
+    
+    Format sections:
+    - ROLE: Who the AI is
+    - CONTEXT: Game state information
+    - TASK: What to generate
+    - CONSTRAINTS: Rules and limits
+    - FORMAT: Expected output structure
+    """
+    
+    name: str
+    version: str
+    prompt_type: PromptType
+    template_text: str
+    required_vars: set[str]
+    optional_vars: set[str]
+    max_tokens: int = 4096
+    expected_response_tokens: int = 512
+    
+    def render(self, context: Dict[str, Any]) -> str:
+        """
+        Render template with context variables.
+        
+        Args:
+            context: Dictionary of template variables
+            
+        Returns:
+            Formatted prompt string
+            
+        Raises:
+            KeyError: If required variable missing
+        """
+        # Validate required variables
+        missing = self.required_vars - context.keys()
+        if missing:
+            raise KeyError(f"Missing required variables: {missing}")
+        
+        # Add defaults for optional variables
+        full_context = {var: "" for var in self.optional_vars}
+        full_context.update(context)
+        
+        # Render template
+        template = Template(self.template_text)
+        return template.safe_substitute(full_context)
+    
+    def estimate_tokens(self, context: Dict[str, Any]) -> int:
+        """
+        Estimate token count for rendered prompt.
+        
+        Returns:
+            Estimated token count
+        """
+        rendered = self.render(context)
+        return len(rendered) // 4  # ~4 chars per token
+
+@dataclass
+class PromptContext:
+    """Context data for prompt rendering."""
+    
+    # Player info
+    player_name: str
+    player_level: int
+    player_location: str
+    
+    # Session info
+    timeline_id: str
+    session_events: list[str]  # Recent events
+    
+    # Specific context (varies by prompt type)
+    specific: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for template rendering."""
+        return {
+            'player_name': self.player_name,
+            'player_level': self.player_level,
+            'player_location': self.player_location,
+            'timeline_id': self.timeline_id,
+            'event_summary': self._summarize_events(),
+            **self.specific
+        }
+    
+    def _summarize_events(self, max_events: int = 5) -> str:
+        """Summarize recent events for context."""
+        recent = self.session_events[-max_events:]
+        return "\n".join(f"- {event}" for event in recent)
+```
+
+### Prompt Library
+
+```python
+class PromptLibrary:
+    """Central repository of prompt templates."""
+    
+    def __init__(self):
+        self._templates: Dict[str, PromptTemplate] = {}
+        self._load_templates()
+    
+    def _load_templates(self) -> None:
+        """Load all prompt templates."""
+        self._templates['combat_narrative_v1'] = PromptTemplate(
+            name='combat_narrative',
+            version='1.0',
+            prompt_type=PromptType.COMBAT_NARRATIVE,
+            template_text=COMBAT_NARRATIVE_TEMPLATE,
+            required_vars={'player_name', 'enemy_name', 'player_action', 'damage'},
+            optional_vars={'combo_count', 'is_critical'},
+            expected_response_tokens=150
+        )
+        
+        self._templates['npc_dialogue_v1'] = PromptTemplate(
+            name='npc_dialogue',
+            version='1.0',
+            prompt_type=PromptType.NPC_DIALOGUE,
+            template_text=NPC_DIALOGUE_TEMPLATE,
+            required_vars={'npc_name', 'npc_personality', 'player_question'},
+            optional_vars={'npc_quest_available', 'player_reputation'},
+            expected_response_tokens=100
+        )
+        
+        # Add more templates...
+    
+    def get_template(self, name: str, version: Optional[str] = None) -> PromptTemplate:
+        """
+        Get prompt template by name and version.
+        
+        Args:
+            name: Template name
+            version: Specific version (None = latest)
+            
+        Returns:
+            Prompt template
+        """
+        if version:
+            key = f"{name}_v{version}"
+        else:
+            # Get latest version
+            matching = [k for k in self._templates.keys() if k.startswith(name)]
+            if not matching:
+                raise KeyError(f"No template found: {name}")
+            key = sorted(matching)[-1]  # Latest version
+        
+        return self._templates[key]
+```
+
+### Specific Prompt Templates
+
+```python
+# Combat Narrative Template
+COMBAT_NARRATIVE_TEMPLATE = """
+[ROLE]
+You are an AI Dungeon Master for a 16-bit RPG inspired by Chrono Trigger. Generate vivid, concise combat descriptions.
+
+[CONTEXT]
+- Player: $player_name (Level $player_level)
+- Location: $player_location
+- Enemy: $enemy_name
+- Recent Events:
+$event_summary
+
+[TASK]
+Generate a dynamic narrative description for this combat action:
+- Player Action: $player_action
+- Damage Dealt: $damage
+- Combo Count: $combo_count
+- Critical Hit: $is_critical
+
+[CONSTRAINTS]
+- Maximum 100 words
+- Tone: Epic and dramatic
+- Match 16-bit RPG aesthetic (think Final Fantasy VI, Chrono Trigger)
+- If critical hit, emphasize the impact
+- If high combo (5+), mention the fluid attack chain
+- NO repetitive phrases ("strikes the enemy", "deals damage")
+
+[FORMAT]
+Return JSON:
+{
+  "description": "narrative text here",
+  "tone": "epic|tense|humorous|grim",
+  "length": word_count
+}
+"""
+
+# NPC Dialogue Template
+NPC_DIALOGUE_TEMPLATE = """
+[ROLE]
+You are an AI Dungeon Master generating NPC dialogue for a time-travel RPG.
+
+[CONTEXT]
+- Player: $player_name (Level $player_level)
+- NPC: $npc_name
+- Personality: $npc_personality
+- Timeline: $timeline_id
+- Player Reputation: $player_reputation
+
+[TASK]
+Generate NPC response to player question: "$player_question"
+
+[CONSTRAINTS]
+- Maximum 75 words
+- Stay in character based on personality
+- Reference timeline if relevant
+- Offer quest hook if available: $npc_quest_available
+- NO modern language or references
+
+[FORMAT]
+Return JSON:
+{
+  "dialogue": "NPC response text",
+  "emotion": "happy|sad|angry|neutral|afraid",
+  "quest_hint": true/false
+}
+"""
+
+# Location Description Template
+LOCATION_DESCRIPTION_TEMPLATE = """
+[ROLE]
+You are an AI Dungeon Master describing locations in a time-travel RPG.
+
+[CONTEXT]
+- Player: $player_name
+- Location: $player_location
+- Timeline: $timeline_id
+- Time of Day: $time_of_day
+- Weather: $weather
+
+[TASK]
+Generate an atmospheric description of this location as the player enters.
+
+[CONSTRAINTS]
+- Maximum 80 words
+- Emphasize 16-bit RPG atmosphere
+- Mention any NPCs or points of interest
+- If timeline has diverged, hint at differences
+- Set the mood and tone
+
+[FORMAT]
+Return JSON:
+{
+  "description": "location description",
+  "mood": "peaceful|ominous|bustling|desolate",
+  "points_of_interest": ["npc1", "shrine", "shop"]
+}
+"""
+
+# Quest Generation Template
+QUEST_GENERATION_TEMPLATE = """
+[ROLE]
+You are an AI Dungeon Master generating side quests for a time-travel RPG.
+
+[CONTEXT]
+- Player: $player_name (Level $player_level)
+- Location: $player_location
+- Timeline: $timeline_id
+- Player History:
+$event_summary
+
+[TASK]
+Generate a side quest appropriate for the player's level and location.
+
+[CONSTRAINTS]
+- Quest should tie into timeline mechanics if possible
+- Difficulty appropriate for level $player_level
+- Clear objective and reward
+- 2-3 steps maximum
+- Fits 16-bit RPG style (fetch quests, monster hunting, NPC requests)
+
+[FORMAT]
+Return JSON:
+{
+  "quest_title": "quest name",
+  "quest_giver": "NPC name",
+  "objective": "what player must do",
+  "steps": ["step 1", "step 2"],
+  "reward": "gold/item/experience",
+  "estimated_time": "short|medium|long"
+}
+"""
+
+# Timeline Event Narration Template
+TIMELINE_NARRATION_TEMPLATE = """
+[ROLE]
+You are an AI Dungeon Master narrating timeline events in a time-travel RPG.
+
+[CONTEXT]
+- Player: $player_name
+- Event Type: $event_type
+- Timeline: $timeline_id
+- Divergence Point: $divergence_description
+- Consequences: $consequences
+
+[TASK]
+Narrate this timeline event dramatically, emphasizing the weight of choices.
+
+[CONSTRAINTS]
+- Maximum 120 words
+- Tone: Dramatic and mysterious
+- Reference time-travel paradoxes if applicable
+- Hint at future consequences
+- Inspired by Chrono Trigger's time gates
+
+[FORMAT]
+Return JSON:
+{
+  "narration": "event description",
+  "severity": "minor|moderate|major|critical",
+  "foreshadowing": "hint at future impact"
+}
+"""
+```
+
+### Context Truncation Strategies
+
+```python
+class ContextTruncator:
+    """Manage context window with intelligent truncation."""
+    
+    def __init__(self, max_tokens: int = 4096):
+        self.max_tokens = max_tokens
+    
+    def truncate_context(
+        self,
+        prompt_template: str,
+        context: PromptContext,
+        reserve_tokens: int = 512  # For response
+    ) -> PromptContext:
+        """
+        Truncate context to fit within token budget.
+        
+        Strategy:
+        1. Keep most recent events
+        2. Summarize older events
+        3. Reduce specific context details if needed
+        """
+        available_tokens = self.max_tokens - reserve_tokens
+        template_tokens = len(prompt_template) // 4
+        remaining = available_tokens - template_tokens
+        
+        if remaining < 0:
+            raise ValueError("Prompt template too large")
+        
+        # Truncate event history
+        events = context.session_events
+        truncated_events = []
+        token_count = 0
+        
+        # Add events from most recent backwards
+        for event in reversed(events):
+            event_tokens = len(event) // 4
+            if token_count + event_tokens <= remaining // 2:  # Reserve half for events
+                truncated_events.insert(0, event)
+                token_count += event_tokens
+            else:
+                break
+        
+        # Create truncated context
+        truncated = PromptContext(
+            player_name=context.player_name,
+            player_level=context.player_level,
+            player_location=context.player_location,
+            timeline_id=context.timeline_id,
+            session_events=truncated_events,
+            specific=context.specific
+        )
+        
+        return truncated
+    
+    def sliding_window(
+        self,
+        messages: list[str],
+        window_size: int = 10
+    ) -> list[str]:
+        """
+        Keep sliding window of most recent messages.
+        
+        Args:
+            messages: Full message history
+            window_size: Number of recent messages to keep
+            
+        Returns:
+            Truncated message list
+        """
+        if len(messages) <= window_size:
+            return messages
+        
+        return messages[-window_size:]
+```
+
+### Response Schema Definitions
+
+```python
+from pydantic import BaseModel, Field, validator
+
+class CombatNarrativeResponse(BaseModel):
+    """Validated combat narrative response."""
+    description: str = Field(..., max_length=500)
+    tone: str = Field(..., pattern="^(epic|tense|humorous|grim)$")
+    length: int = Field(..., ge=1, le=150)
+    
+    @validator('description')
+    def no_empty_description(cls, v):
+        if not v.strip():
+            raise ValueError("Description cannot be empty")
+        return v
+
+class NPCDialogueResponse(BaseModel):
+    """Validated NPC dialogue response."""
+    dialogue: str = Field(..., max_length=400)
+    emotion: str = Field(..., pattern="^(happy|sad|angry|neutral|afraid)$")
+    quest_hint: bool
+    
+    @validator('dialogue')
+    def no_modern_slang(cls, v):
+        # Basic check for modern slang
+        forbidden = ['lol', 'omg', 'brb', 'gg']
+        lower = v.lower()
+        for word in forbidden:
+            if word in lower:
+                raise ValueError(f"Modern slang not allowed: {word}")
+        return v
+
+class QuestGenerationResponse(BaseModel):
+    """Validated quest generation response."""
+    quest_title: str = Field(..., max_length=50)
+    quest_giver: str = Field(..., max_length=30)
+    objective: str = Field(..., max_length=200)
+    steps: list[str] = Field(..., min_items=1, max_items=5)
+    reward: str = Field(..., max_length=100)
+    estimated_time: str = Field(..., pattern="^(short|medium|long)$")
+
+class LocationDescriptionResponse(BaseModel):
+    """Validated location description response."""
+    description: str = Field(..., max_length=400)
+    mood: str = Field(..., pattern="^(peaceful|ominous|bustling|desolate)$")
+    points_of_interest: list[str] = Field(default_factory=list, max_items=5)
+```
+
+## Prompt Optimization Techniques
+
+### Token Efficiency
+```python
+# Bad: Verbose, wastes tokens
+"The player character named {name} is currently located in the geographical area known as {location}"
+
+# Good: Concise, same information
+"Player {name} in {location}"
+```
+
+### Context Prioritization
+```python
+def prioritize_context(context: PromptContext) -> PromptContext:
+    """Keep most relevant context, discard less important."""
+    # Priority: recent events > old events
+    # Priority: current location > past locations
+    # Priority: active quests > completed quests
+    ...
+```
+
+### Batch Similar Prompts
+```python
+async def generate_multiple_dialogues(
+    npcs: list[NPC],
+    player_question: str
+) -> list[NPCDialogueResponse]:
+    """Generate dialogues for multiple NPCs in parallel."""
+    tasks = [
+        ai_manager.generate_npc_dialogue(npc, player_question)
+        for npc in npcs
+    ]
+    return await asyncio.gather(*tasks)
+```
+
+## Testing Requirements
+
+### Unit Tests
+```python
+def test_prompt_template_rendering():
+    """Test template renders with valid context."""
+    template = PromptTemplate(
+        name='test',
+        version='1.0',
+        prompt_type=PromptType.COMBAT_NARRATIVE,
+        template_text="Player: $player_name, Enemy: $enemy_name",
+        required_vars={'player_name', 'enemy_name'},
+        optional_vars=set()
+    )
+    
+    result = template.render({
+        'player_name': 'Hero',
+        'enemy_name': 'Dragon'
+    })
+    
+    assert 'Hero' in result
+    assert 'Dragon' in result
+
+def test_token_counting():
+    """Test token estimation accuracy."""
+    template = PromptTemplate(...)
+    context = {'player_name': 'Test'}
+    
+    estimated = template.estimate_tokens(context)
+    actual = len(template.render(context)) // 4
+    
+    assert abs(estimated - actual) < 10  # Within 10 tokens
+```
+
+### A/B Testing
+```python
+@dataclass
+class PromptPerformanceMetrics:
+    """Track prompt performance."""
+    template_name: str
+    version: str
+    total_uses: int
+    avg_response_time: float
+    fallback_rate: float  # How often AI fails and fallback used
+    player_satisfaction: float  # From feedback signals
+```
+
+## Anti-Patterns to Prevent
+
+❌ **Overly Long Prompts**: Keep prompts concise, don't include unnecessary context
+❌ **No Token Counting**: Always validate token count before sending
+❌ **Hardcoded Prompts**: Use templates and variables, never hardcode
+❌ **Unstructured Responses**: Always request JSON with schema
+❌ **No Versioning**: Track prompt versions for A/B testing and rollback
+❌ **Ignoring Token Budget**: Prompt + expected response must fit in 4096 tokens
+
+## Success Metrics
+
+- All prompts fit within 4096 token limit
+- Average prompt length < 2000 tokens
+- Response parsing success rate > 90%
+- Prompt rendering time < 1ms
+- Clear, maintainable template structure
