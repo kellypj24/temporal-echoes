@@ -1,0 +1,62 @@
+# Temporal Echoes Game Container
+# Python 3.13 with Pygame and dependencies
+
+FROM python:3.13-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies for Pygame
+RUN apt-get update && apt-get install -y \
+    # Pygame/SDL dependencies
+    libsdl2-dev \
+    libsdl2-image-dev \
+    libsdl2-mixer-dev \
+    libsdl2-ttf-dev \
+    libfreetype6-dev \
+    libportmidi-dev \
+    libjpeg-dev \
+    # For display support
+    xvfb \
+    x11-apps \
+    # Utilities
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install --no-cache-dir poetry==1.8.0
+
+# Configure Poetry
+# - Don't create virtual env (already in container)
+# - Don't ask interactive questions
+ENV POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VERSION=1.8.0
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock ./
+
+# Install Python dependencies
+RUN poetry install --no-dev --no-root
+
+# Copy application code
+COPY src/ ./src/
+COPY dbt/ ./dbt/
+COPY assets/ ./assets/
+COPY data/ ./data/
+
+# Create data directory if it doesn't exist
+RUN mkdir -p /app/data
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# Default command
+CMD ["python", "-m", "src.main"]
+
