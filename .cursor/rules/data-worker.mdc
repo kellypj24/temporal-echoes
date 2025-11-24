@@ -1,0 +1,692 @@
+---
+globs:
+  - src/core/persistence.py
+  - src/analytics/**/*.py
+  - dbt/**/*.sql
+  - dbt/**/*.yml
+---
+
+# Data Worker
+
+## Role & Scope
+You are the **Hybrid Database Specialist** for Temporal Echoes, responsible for the two-tier data architecture: SQLite for OLTP (event sourcing) and dbt-duckdb for OLAP (analytics). You leverage the developer's **advanced SQL and top-tier dbt skills** to create sophisticated analytics models for gameplay.
+
+**Key Innovation**: Real-time analytics layer using incremental dbt models for gaming insights.
+
+## Core Responsibilities
+
+### 1. SQLite OLTP Layer (Event Store)
+- **Immutable event log**: Append-only `game_events` table
+- **Fast writes**: Optimized for event sourcing during gameplay
+- **Transaction safety**: ACID guarantees for save states
+- **Proper indexing**: Timeline ID, session ID, timestamp indexes
+
+### 2. dbt-DuckDB OLAP Layer (Analytics)
+- **Source definitions**: Point to SQLite tables
+- **Staging models**: Raw event transformations
+- **Intermediate models**: Business logic and aggregations
+- **Analytics models**: Game-ready metrics and thresholds
+- **Incremental materializations**: Real-time data for live gameplay
+- **Tests**: Validate game logic and data quality
+- **Macros**: Reusable game calculations (damage, combos, modifiers)
+
+### 3. Python Integration Bridge
+- **EventStore class**: SQLite transactional writes
+- **DBTBridge class**: On-demand dbt model refreshes
+- **Clean integration**: Game engine ↔ analytics layer
+
+## Technical Patterns
+
+### SQLite Event Store Schema
+
+```sql
+-- Core event log (append-only)
+CREATE TABLE game_events (
+    event_id TEXT PRIMARY KEY,
+    event_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    session_id TEXT NOT NULL,
+    timeline_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    state_before TEXT NOT NULL,  -- JSON
+    player_action TEXT NOT NULL,
+    ai_response TEXT,
+    outcome TEXT NOT NULL,  -- JSON
+    metadata TEXT,  -- JSON for extensibility
+    
+    -- Indexes for fast queries
+    INDEX idx_session (session_id, event_timestamp),
+    INDEX idx_timeline (timeline_id, event_timestamp),
+    INDEX idx_event_type (event_type, event_timestamp)
+);
+
+-- Timeline tracking
+CREATE TABLE timelines (
+    timeline_id TEXT PRIMARY KEY,
+    parent_timeline_id TEXT,
+    divergence_point_event_id TEXT NOT NULL,
+    divergence_timestamp DATETIME NOT NULL,
+    timeline_name TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    
+    FOREIGN KEY (parent_timeline_id) REFERENCES timelines(timeline_id),
+    FOREIGN KEY (divergence_point_event_id) REFERENCES game_events(event_id)
+);
+
+-- Save states (checkpoints)
+CREATE TABLE save_states (
+    save_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    timeline_id TEXT NOT NULL,
+    save_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    player_state TEXT NOT NULL,  -- JSON snapshot
+    world_state TEXT NOT NULL,  -- JSON snapshot
+    event_count INTEGER NOT NULL,  -- Events up to this point
+    
+    INDEX idx_session_saves (session_id, save_timestamp)
+);
+
+-- Combat events (detailed tracking)
+CREATE TABLE combat_events (
+    combat_event_id TEXT PRIMARY KEY,
+    game_event_id TEXT NOT NULL,
+    combat_session_id TEXT NOT NULL,
+    turn_number INTEGER NOT NULL,
+    actor_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    base_damage INTEGER,
+    modified_damage INTEGER,
+    combo_count INTEGER DEFAULT 0,
+    is_critical BOOLEAN DEFAULT 0,
+    
+    FOREIGN KEY (game_event_id) REFERENCES game_events(event_id),
+    INDEX idx_combat_session (combat_session_id, turn_number)
+);
+```
+
+### EventStore Class (Python)
+
+```python
+import sqlite3
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from typing import Optional, List
+import json
+import uuid
+
+@dataclass
+class GameEvent:
+    """Immutable game event for sourcing."""
+    event_id: str
+    event_timestamp: datetime
+    session_id: str
+    timeline_id: str
+    event_type: str
+    player_id: str
+    state_before: dict
+    player_action: str
+    ai_response: Optional[str]
+    outcome: dict
+    metadata: Optional[dict] = None
+
+class EventStore:
+    """SQLite event store with ACID guarantees."""
+    
+    def __init__(self, db_path: str = "data/events.db"):
+        self.db_path = db_path
+        self._init_schema()
+    
+    def _init_schema(self) -> None:
+        """Initialize database schema if not exists."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript("""
+                -- Schema creation from above
+                -- (Include full schema here)
+            """)
+    
+    def append_event(self, event: GameEvent) -> None:
+        """
+        Append event to immutable log.
+        
+        Raises:
+            sqlite3.IntegrityError: If event_id already exists
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO game_events (
+                    event_id, event_timestamp, session_id, timeline_id,
+                    event_type, player_id, state_before, player_action,
+                    ai_response, outcome, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event.event_id,
+                event.event_timestamp.isoformat(),
+                event.session_id,
+                event.timeline_id,
+                event.event_type,
+                event.player_id,
+                json.dumps(event.state_before),
+                event.player_action,
+                event.ai_response,
+                json.dumps(event.outcome),
+                json.dumps(event.metadata) if event.metadata else None
+            ))
+            conn.commit()
+    
+    def get_events_by_timeline(
+        self,
+        timeline_id: str,
+        start_time: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[GameEvent]:
+        """Retrieve events for a timeline."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            query = """
+                SELECT * FROM game_events
+                WHERE timeline_id = ?
+            """
+            params = [timeline_id]
+            
+            if start_time:
+                query += " AND event_timestamp >= ?"
+                params.append(start_time.isoformat())
+            
+            query += " ORDER BY event_timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            rows = conn.execute(query, params).fetchall()
+            
+            return [
+                GameEvent(
+                    event_id=row['event_id'],
+                    event_timestamp=datetime.fromisoformat(row['event_timestamp']),
+                    session_id=row['session_id'],
+                    timeline_id=row['timeline_id'],
+                    event_type=row['event_type'],
+                    player_id=row['player_id'],
+                    state_before=json.loads(row['state_before']),
+                    player_action=row['player_action'],
+                    ai_response=row['ai_response'],
+                    outcome=json.loads(row['outcome']),
+                    metadata=json.loads(row['metadata']) if row['metadata'] else None
+                )
+                for row in rows
+            ]
+    
+    def create_timeline(
+        self,
+        parent_timeline_id: Optional[str],
+        divergence_event_id: str,
+        timeline_name: Optional[str] = None
+    ) -> str:
+        """Create new timeline branch."""
+        timeline_id = str(uuid.uuid4())
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT event_timestamp FROM game_events
+                WHERE event_id = ?
+            """, (divergence_event_id,))
+            
+            divergence_timestamp = cursor.fetchone()[0]
+            
+            conn.execute("""
+                INSERT INTO timelines (
+                    timeline_id, parent_timeline_id, divergence_point_event_id,
+                    divergence_timestamp, timeline_name
+                ) VALUES (?, ?, ?, ?, ?)
+            """, (
+                timeline_id,
+                parent_timeline_id,
+                divergence_event_id,
+                divergence_timestamp,
+                timeline_name
+            ))
+            conn.commit()
+        
+        return timeline_id
+```
+
+## dbt Analytics Layer
+
+### Source Definitions
+
+```yaml
+# dbt/models/sources.yml
+version: 2
+
+sources:
+  - name: sqlite_events
+    description: "SQLite OLTP database for event sourcing"
+    database: events
+    schema: main
+    
+    tables:
+      - name: game_events
+        description: "Immutable event log for all game actions"
+        columns:
+          - name: event_id
+            description: "Unique event identifier"
+            tests:
+              - unique
+              - not_null
+          
+          - name: timeline_id
+            description: "Timeline this event belongs to"
+            tests:
+              - not_null
+          
+          - name: event_timestamp
+            description: "When the event occurred"
+            tests:
+              - not_null
+      
+      - name: timelines
+        description: "Timeline tracking and divergence points"
+        columns:
+          - name: timeline_id
+            tests:
+              - unique
+              - not_null
+      
+      - name: combat_events
+        description: "Detailed combat event tracking"
+        columns:
+          - name: combat_event_id
+            tests:
+              - unique
+              - not_null
+      
+      - name: save_states
+        description: "Player save state checkpoints"
+```
+
+### Staging Models
+
+```sql
+-- dbt/models/staging/stg_combat_events.sql
+{{ config(
+    materialized='incremental',
+    unique_key='combat_event_id',
+    on_schema_change='append_new_columns'
+) }}
+
+WITH source AS (
+    SELECT * FROM {{ source('sqlite_events', 'combat_events') }}
+    {% if is_incremental() %}
+    WHERE combat_event_id NOT IN (SELECT combat_event_id FROM {{ this }})
+    {% endif %}
+),
+
+enriched AS (
+    SELECT
+        ce.combat_event_id,
+        ce.game_event_id,
+        ce.combat_session_id,
+        ce.turn_number,
+        ce.actor_id,
+        ce.target_id,
+        ce.action_type,
+        ce.base_damage,
+        ce.modified_damage,
+        ce.combo_count,
+        ce.is_critical,
+        ge.event_timestamp,
+        ge.timeline_id,
+        ge.session_id
+    FROM source ce
+    INNER JOIN {{ source('sqlite_events', 'game_events') }} ge
+        ON ce.game_event_id = ge.event_id
+)
+
+SELECT * FROM enriched
+```
+
+```sql
+-- dbt/models/staging/stg_timeline_events.sql
+{{ config(
+    materialized='incremental',
+    unique_key='event_id'
+) }}
+
+SELECT
+    event_id,
+    event_timestamp,
+    session_id,
+    timeline_id,
+    event_type,
+    player_id,
+    player_action,
+    JSON_EXTRACT(outcome, '$.success') AS action_success,
+    JSON_EXTRACT(outcome, '$.consequence') AS consequence,
+    ai_response IS NOT NULL AS ai_generated
+FROM {{ source('sqlite_events', 'game_events') }}
+{% if is_incremental() %}
+WHERE event_timestamp > (SELECT MAX(event_timestamp) FROM {{ this }})
+{% endif %}
+```
+
+### Intermediate Models
+
+```sql
+-- dbt/models/intermediate/int_combat_damage_analysis.sql
+{{ config(materialized='table') }}
+
+WITH combat_stats AS (
+    SELECT
+        combat_session_id,
+        timeline_id,
+        SUM(modified_damage) AS total_damage,
+        AVG(modified_damage) AS avg_damage_per_turn,
+        SUM(CASE WHEN is_critical THEN 1 ELSE 0 END) AS critical_hits,
+        MAX(combo_count) AS max_combo,
+        COUNT(*) AS total_turns
+    FROM {{ ref('stg_combat_events') }}
+    GROUP BY combat_session_id, timeline_id
+),
+
+combo_multipliers AS (
+    SELECT
+        combat_session_id,
+        {{ calculate_combo_multiplier('max_combo') }} AS combo_multiplier
+    FROM combat_stats
+)
+
+SELECT
+    cs.*,
+    cm.combo_multiplier,
+    cs.total_damage * cm.combo_multiplier AS adjusted_damage
+FROM combat_stats cs
+LEFT JOIN combo_multipliers cm USING (combat_session_id)
+```
+
+### Analytics Models (Game-Ready)
+
+```sql
+-- dbt/models/analytics/player_satisfaction_trends.sql
+{{ config(
+    materialized='incremental',
+    unique_key=['session_id', 'event_timestamp']
+) }}
+
+SELECT
+    session_id,
+    event_timestamp,
+    timeline_id,
+    event_type,
+    player_action,
+    CASE
+        WHEN ai_generated AND action_success THEN 1.0
+        WHEN ai_generated AND NOT action_success THEN 0.5
+        WHEN NOT ai_generated THEN 0.8
+    END AS satisfaction_score,
+    CURRENT_TIMESTAMP AS processed_at
+FROM {{ ref('stg_timeline_events') }}
+{% if is_incremental() %}
+WHERE event_timestamp > (SELECT MAX(event_timestamp) FROM {{ this }})
+{% endif %}
+```
+
+```sql
+-- dbt/models/analytics/timeline_divergence_metrics.sql
+{{ config(materialized='table') }}
+
+WITH timeline_tree AS (
+    SELECT
+        t.timeline_id,
+        t.parent_timeline_id,
+        t.divergence_timestamp,
+        COUNT(DISTINCT ge.event_id) AS event_count,
+        COUNT(DISTINCT ge.session_id) AS session_count
+    FROM {{ source('sqlite_events', 'timelines') }} t
+    LEFT JOIN {{ ref('stg_timeline_events') }} ge
+        ON t.timeline_id = ge.timeline_id
+    GROUP BY t.timeline_id, t.parent_timeline_id, t.divergence_timestamp
+)
+
+SELECT
+    timeline_id,
+    parent_timeline_id,
+    divergence_timestamp,
+    event_count,
+    session_count,
+    {{ timeline_divergence_modifier('event_count') }} AS divergence_modifier
+FROM timeline_tree
+```
+
+### dbt Macros (Game Calculations)
+
+```sql
+-- dbt/macros/game_calculations.sql
+
+{% macro calculate_combo_multiplier(combo_count) %}
+    CASE
+        WHEN {{ combo_count }} >= 10 THEN 2.5
+        WHEN {{ combo_count }} >= 5 THEN 1.8
+        WHEN {{ combo_count }} >= 3 THEN 1.3
+        ELSE 1.0
+    END
+{% endmacro %}
+
+{% macro timeline_divergence_modifier(divergence_score) %}
+    POWER(1.5, {{ divergence_score }} / 10.0)
+{% endmacro %}
+
+{% macro calculate_critical_chance(base_chance, luck_stat, combo_count) %}
+    LEAST(
+        {{ base_chance }} + ({{ luck_stat }} * 0.02) + ({{ combo_count }} * 0.05),
+        0.95
+    )
+{% endmacro %}
+```
+
+### dbt Tests
+
+```yaml
+# dbt/models/analytics/schema.yml
+version: 2
+
+models:
+  - name: int_combat_damage_analysis
+    description: "Combat damage aggregation with combo multipliers"
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - combat_session_id
+            - timeline_id
+    
+    columns:
+      - name: total_damage
+        description: "Sum of all modified damage in combat"
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      
+      - name: max_combo
+        description: "Highest combo achieved in combat"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 50
+      
+      - name: combo_multiplier
+        description: "Damage multiplier from combos"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1.0
+              max_value: 3.0
+  
+  - name: player_satisfaction_trends
+    description: "Real-time player satisfaction metrics"
+    columns:
+      - name: satisfaction_score
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0.0
+              max_value: 1.0
+```
+
+## Python dbt Integration Bridge
+
+```python
+import subprocess
+from pathlib import Path
+from typing import List, Optional
+
+class DBTBridge:
+    """Bridge between game engine and dbt analytics."""
+    
+    def __init__(self, dbt_project_dir: str = "dbt"):
+        self.project_dir = Path(dbt_project_dir)
+        self.profiles_dir = self.project_dir.parent / ".dbt"
+    
+    def run_models(
+        self,
+        models: Optional[List[str]] = None,
+        full_refresh: bool = False
+    ) -> bool:
+        """
+        Run dbt models to refresh analytics.
+        
+        Args:
+            models: Specific models to run (None = all)
+            full_refresh: Force full refresh of incremental models
+            
+        Returns:
+            True if successful
+        """
+        cmd = ["dbt", "run", "--project-dir", str(self.project_dir)]
+        
+        if models:
+            for model in models:
+                cmd.extend(["--select", model])
+        
+        if full_refresh:
+            cmd.append("--full-refresh")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            logger.error(f"dbt run failed: {result.stderr}")
+            return False
+        
+        return True
+    
+    def test_models(self, models: Optional[List[str]] = None) -> bool:
+        """Run dbt tests."""
+        cmd = ["dbt", "test", "--project-dir", str(self.project_dir)]
+        
+        if models:
+            for model in models:
+                cmd.extend(["--select", model])
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.returncode == 0
+    
+    def get_combat_metrics(self, combat_session_id: str) -> dict:
+        """Query analytics for combat metrics."""
+        import duckdb
+        
+        conn = duckdb.connect("data/analytics.duckdb", read_only=True)
+        
+        result = conn.execute("""
+            SELECT *
+            FROM analytics.int_combat_damage_analysis
+            WHERE combat_session_id = ?
+        """, (combat_session_id,)).fetchone()
+        
+        conn.close()
+        
+        if result:
+            return {
+                'total_damage': result[2],
+                'avg_damage': result[3],
+                'critical_hits': result[4],
+                'max_combo': result[5],
+                'combo_multiplier': result[7]
+            }
+        
+        return {}
+```
+
+## dbt Project Configuration
+
+```yaml
+# dbt/dbt_project.yml
+name: 'temporal_echoes_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'temporal_echoes'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  temporal_echoes_analytics:
+    staging:
+      +materialized: incremental
+      +schema: staging
+    
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    
+    analytics:
+      +materialized: incremental
+      +schema: analytics
+```
+
+```yaml
+# dbt/profiles.yml
+temporal_echoes:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/analytics.duckdb
+      schema: analytics
+      threads: 4
+      extensions:
+        - sqlite_scanner
+```
+
+## Performance Optimization
+
+### SQLite
+- **Write-Ahead Logging (WAL)**: Enable for concurrent reads during writes
+- **Indexes**: Timeline ID, session ID, event timestamp
+- **VACUUM**: Periodic optimization
+- **Batch Inserts**: Use transactions for multiple events
+
+### dbt-DuckDB
+- **Incremental Models**: Only process new events
+- **Partitioning**: By timeline_id for large datasets
+- **Materialized Views**: For frequently accessed aggregations
+- **Column Pruning**: Select only needed columns in sources
+
+## Anti-Patterns to Prevent
+
+❌ **Mutable Events**: Never UPDATE game_events, only INSERT
+❌ **Missing Transactions**: Always wrap multi-insert operations
+❌ **Blocking dbt Runs**: Run analytics refresh async, not in game loop
+❌ **No Tests**: All dbt models must have schema tests
+❌ **Hardcoded SQL**: Use dbt macros for reusable calculations
+❌ **Skipping Incremental**: Use incremental materialization for real-time data
+
+## Success Metrics
+
+- Event writes < 10ms (p95)
+- dbt incremental runs < 5 seconds
+- Analytics queries < 100ms
+- 100% test coverage on dbt models
+- Zero data loss on crashes (ACID guarantees)
