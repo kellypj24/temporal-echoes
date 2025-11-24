@@ -17,7 +17,7 @@ def create_test_event(
 ) -> GameEvent:
     """
     Factory function for creating test events.
-    
+
     Args:
         event_type: Type of event (defaults to STATE_TRANSITION)
         session_id: Session identifier
@@ -26,7 +26,7 @@ def create_test_event(
         aggregate_type: Aggregate type
         event_data: JSON event data
         metadata: JSON metadata
-    
+
     Returns:
         GameEvent with provided or default values
     """
@@ -98,22 +98,28 @@ def create_state_transition_event(
 
 
 # Sample event sequences for integration testing
-def create_event_sequence(count: int = 10, session_id: str = "test_session", timeline_id: str = "test_timeline") -> list[GameEvent]:
+def create_event_sequence(
+    count: int = 10,
+    session_id: str = "test_session",
+    timeline_id: str = "test_timeline",
+) -> list[GameEvent]:
     """Create a sequence of test events."""
     events = []
-    
+
     # Game start
-    events.append(GameEvent(
-        event_type=EventTypes.GAME_START,
-        session_id=session_id,
-        timeline_id=timeline_id,
-        aggregate_id="game_001",
-        aggregate_type="game",
-        event_data='{"started_at": "2025-11-24T00:00:00Z"}',
-        metadata='{"version": "1.0"}',
-    ))
-    
-    # State transitions
+    events.append(
+        GameEvent(
+            event_type=EventTypes.GAME_START,
+            session_id=session_id,
+            timeline_id=timeline_id,
+            aggregate_id="game_001",
+            aggregate_type="game",
+            event_data='{"started_at": "2025-11-24T00:00:00Z"}',
+            metadata='{"version": "1.0"}',
+        )
+    )
+
+    # State transitions (repeat as needed to reach count)
     transitions = [
         ("MENU", "EXPLORING"),
         ("EXPLORING", "COMBAT"),
@@ -121,26 +127,35 @@ def create_event_sequence(count: int = 10, session_id: str = "test_session", tim
         ("EXPLORING", "DIALOGUE"),
         ("DIALOGUE", "EXPLORING"),
     ]
-    
-    for i, (from_state, to_state) in enumerate(transitions[:count-2]):
-        events.append(create_state_transition_event(
-            from_state=from_state,
-            to_state=to_state,
-            session_id=session_id,
-            timeline_id=timeline_id,
-        ))
-    
-    # Game end
-    if len(events) < count:
-        events.append(GameEvent(
-            event_type=EventTypes.GAME_END,
-            session_id=session_id,
-            timeline_id=timeline_id,
-            aggregate_id="game_001",
-            aggregate_type="game",
-            event_data='{"ended_at": "2025-11-24T01:00:00Z"}',
-            metadata='{"version": "1.0"}',
-        ))
-    
-    return events[:count]
 
+    # Calculate how many transitions we need (count - 1 for start - 1 for end)
+    num_transitions_needed = max(0, count - 2)
+
+    # Repeat transitions list to ensure we have enough
+    for i in range(num_transitions_needed):
+        transition_idx = i % len(transitions)
+        from_state, to_state = transitions[transition_idx]
+        events.append(
+            create_state_transition_event(
+                from_state=from_state,
+                to_state=to_state,
+                session_id=session_id,
+                timeline_id=timeline_id,
+            )
+        )
+
+    # Game end (only if we need more events)
+    if len(events) < count:
+        events.append(
+            GameEvent(
+                event_type=EventTypes.GAME_END,
+                session_id=session_id,
+                timeline_id=timeline_id,
+                aggregate_id="game_001",
+                aggregate_type="game",
+                event_data='{"ended_at": "2025-11-24T01:00:00Z"}',
+                metadata='{"version": "1.0"}',
+            )
+        )
+
+    return events[:count]
