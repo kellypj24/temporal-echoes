@@ -8,4 +8,3 @@ This package contains the foundational architecture components:
 """
 
 __all__ = ["events", "persistence"]
-
