@@ -85,10 +85,17 @@ Phase 1 establishes the foundational architecture for Temporal Echoes. We're imp
 
 ### Step 1: SQLite Event Store Implementation
 **Branch**: `feature/phase-1-event-store`  
-**Supervisors**: `@architect-supervisor`, `@data-worker`
+**Supervisors**: `@architect-supervisor`, `@data-worker`  
+**Based On**: Research Topic 1 (Event Sourcing with SQLite), DEC-0001
 
 **Description**: 
 Implement the core event store using SQLite with proper schema design, indexing, and transaction safety. This is the foundation for all game state persistence.
+
+**Research Guidance**:
+- Use WAL mode for better concurrency (per Research Topic 1)
+- Schema design informed by DEC-0001
+- Index on timeline_id, session_id, event_timestamp
+- JSON column for event payload (flexibility)
 
 **Tasks**:
 - [ ] Create `src/core/persistence.py` with EventStore class
@@ -120,10 +127,17 @@ Implement the core event store using SQLite with proper schema design, indexing,
 
 ### Step 2: Base State Machine
 **Branch**: `feature/phase-1-state-machine`  
-**Supervisors**: `@architect-supervisor`, `@game-logic-worker`
+**Supervisors**: `@architect-supervisor`, `@game-logic-worker`  
+**Based On**: Research Topic 3 (State Machine Pattern), DEC-0002
 
 **Description**: 
 Implement the core state machine with state enum, transition validation, and event emission. This coordinates game modes (MENU, EXPLORING, COMBAT, etc.).
+
+**Research Guidance**:
+- Custom implementation (per DEC-0002) using enum + validation matrix
+- Explicit allowed transitions for clarity
+- Emit events on every state change (constitution principle #1)
+- Dependency injection for EventStore (constitution principle #2)
 
 **Tasks**:
 - [ ] Create `src/core/state_machine.py` with GameStateMachine class
@@ -185,10 +199,17 @@ Create the GameContext class that holds all game state and coordinates between s
 
 ### Step 4: Basic Game Loop Structure
 **Branch**: `feature/phase-1-game-loop`  
-**Supervisors**: `@architect-supervisor`, `@game-logic-worker`
+**Supervisors**: `@architect-supervisor`, `@game-logic-worker`  
+**Based On**: Research Topic 2 (Pygame Event Loop Integration), Research Topic 4 (Async AI)
 
 **Description**:
 Create the main game loop structure without rendering. Handles update cycle, delta time, and state-specific updates.
+
+**Research Guidance**:
+- Game loop timing model determined by PD-4 (pending research)
+- Async integration strategy from PD-3 (pending research)
+- No rendering (per DEC-0003) - console-based for Phase 1
+- Target consistent tick rate (60 FPS preparation)
 
 **Tasks**:
 - [ ] Create `src/core/game_loop.py` with GameLoop class
@@ -218,10 +239,17 @@ Create the main game loop structure without rendering. Handles update cycle, del
 
 ### Step 5: Configuration System
 **Branch**: `feature/phase-1-config`  
-**Supervisors**: `@architect-supervisor`
+**Supervisors**: `@architect-supervisor`  
+**Based On**: Research Topic 5 (Configuration Management)
 
 **Description**:
 Implement configuration management using environment variables and config files.
+
+**Research Guidance**:
+- Library choice determined by PD-5 (pending research)
+- Type-safe configuration (constitution principle #3)
+- Environment variable support (.env file)
+- Validation for required settings
 
 **Tasks**:
 - [ ] Create `src/core/config.py` with Config class
@@ -308,29 +336,70 @@ After all steps are complete:
 - [ ] Game loop maintains target tick rate
 - [ ] Memory usage stable over time
 
+## Constitution Compliance
+
+Review against `.cursor/rules/CONSTITUTION.md` principles:
+
+### Immutable Principles Check
+- [ ] ✅ **Principle #1**: Events are append-only (no updates/deletes to game_events)
+- [ ] ✅ **Principle #2**: Dependencies injected via constructors (EventStore, StateMachine)
+- [ ] ✅ **Principle #3**: Type hints on all functions
+- [ ] ✅ **Principle #4**: Clean separation of concerns (no rendering in src/core/)
+- [ ] ✅ **Principle #5**: >= 80% test coverage
+- [ ] ✅ **Principle #6**: Specific error handling (no bare except)
+- [ ] ✅ **Principle #7**: Google-style docstrings on public APIs
+- [ ] ⏳ **Principle #8**: All AI calls are async/non-blocking (N/A for Phase 1)
+- [ ] ⏳ **Principle #9**: AI fallbacks implemented (N/A for Phase 1)
+- [ ] ⏳ **Principle #10**: Token limits validated (N/A for Phase 1)
+- [ ] ✅ **Principle #11**: Events are immutable (SQLite append-only)
+- [ ] ✅ **Principle #12**: Transactions used for multi-step DB operations
+- [ ] ✅ **Principle #13**: SQLite for OLTP, DuckDB for OLAP
+- [ ] ⏳ **Principle #14**: 60 FPS target maintained (structure only, no rendering)
+- [ ] ⏳ **Principle #15**: < 5 second AI response time (N/A for Phase 1)
+
+### Deviations
+**None Expected**. All Phase 1 work aligns with constitution principles.
+
+If ANY principles are violated during implementation, they MUST be documented in `decisions.md` with:
+- **[Principle Name]**: [Link to decision record justifying deviation]
+- Justification and remediation plan
+- GitHub issue for technical debt tracking
+
 ## Rollback Plan
 If this phase needs to be reverted:
 1. `git checkout main`
-2. Delete `phase/1-core-game-loop` branch
+2. `git branch -D phase/1-core-game-loop`
 3. Remove `assignments/active/phase-1-core-game-loop/`
 4. Drop `data/events.db` if created
+5. Revert commits: `git revert <commit-hash>`
+6. Update decision log with rollback reason
 
-## Notes & Decisions
+## Retrospective
 
-### Decision 1: SQLite for Event Store
-- **Rationale**: Simple, embedded, ACID-compliant, no server needed
-- **Alternatives Considered**: PostgreSQL (overkill), JSON files (no transactions)
-- **Trade-offs**: Gained simplicity, acceptable performance for single-player game
+### What Went Well
+[Document successes for future reference]
+- [To be filled upon completion]
 
-### Decision 2: State Machine Pattern
-- **Rationale**: Clear state transitions, easy to reason about, testable
-- **Alternatives Considered**: Pure event sourcing (too complex for start)
-- **Trade-offs**: Some boilerplate, but worth it for clarity
+### What Could Be Improved
+[Document challenges and how to avoid them]
+- [To be filled upon completion]
 
-### Decision 3: No Rendering in Phase 1
-- **Rationale**: Focus on architecture first, rendering is complex distraction
-- **Alternatives Considered**: Build game + rendering together (risky)
-- **Trade-offs**: Can't see visual progress, but architecture will be solid
+### Lessons Learned
+[Key takeaways for future phases]
+- [To be filled upon completion]
+
+### Metrics
+- **Estimated Time**: 14-20 hours (5 steps)
+- **Actual Time**: _____ hours
+- **Test Coverage**: _____%
+- **Lines of Code**: _____
+- **Decisions Made**: 3 (documented)
+- **Constitution Deviations**: 0
+- **Research Topics Completed**: 6
+
+### Technical Debt Created
+[Document any shortcuts or TODOs]
+- [To be filled upon completion]
 
 ## Follow-up Phases
 What should be done after this phase:
@@ -343,11 +412,13 @@ What should be done after this phase:
 - [ ] All steps completed
 - [ ] All tests passing
 - [ ] All validation criteria met
+- [ ] Constitution compliance verified (all 15 principles)
 - [ ] Documentation complete
+- [ ] Retrospective filled out
 - [ ] Ready to merge to `main`
 - [ ] Ready to move to `assignments/completed/`
 
 **Completed By**: _____________  
 **Completion Date**: _____________  
-**Review Status**: [ ] Approved / [ ] Needs Revision
+**Review Status**: [ ] Approved / [ ] Needs Revision / [ ] Needs Constitution Review
 
