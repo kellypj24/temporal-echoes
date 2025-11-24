@@ -45,9 +45,8 @@ RUN poetry install --no-dev --no-root
 COPY src/ ./src/
 COPY dbt/ ./dbt/
 COPY assets/ ./assets/
-COPY data/ ./data/
 
-# Create data directory if it doesn't exist
+# Ensure data directory exists
 RUN mkdir -p /app/data
 
 # Set Python path
