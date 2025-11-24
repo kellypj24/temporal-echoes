@@ -15,6 +15,7 @@ Performance Targets:
 
 import logging
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -151,7 +152,7 @@ class EventStore:
         logger.debug("Event store schema initialized")
 
     @contextmanager
-    def _transaction(self) -> None:  # type: ignore[misc]
+    def _transaction(self) -> Generator[None]:
         """
         Context manager for transactions (Constitution Principle #12).
 
@@ -164,7 +165,7 @@ class EventStore:
         """
         assert self._conn is not None, "Connection not initialized"
         try:
-            yield
+            yield None
             self._conn.commit()
         except Exception as e:
             self._conn.rollback()
@@ -364,6 +365,7 @@ class EventStore:
             ]
 
         # Copy events to new timeline
+        assert self._conn is not None, "Connection not initialized"
         with self._transaction():
             for event in source_events:
                 # Create new event with same data but different timeline_id
