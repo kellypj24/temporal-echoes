@@ -18,9 +18,22 @@ Temporal Echoes is a turn-based RPG inspired by classics like Chrono Trigger and
 
 ## 🏗️ Architecture
 
+### Core Governance
+All development follows **15 immutable principles** defined in `.cursor/rules/CONSTITUTION.md`:
+- Event sourcing integrity (append-only)
+- Dependency injection patterns
+- Type safety requirements
+- Separation of concerns
+- >= 80% test coverage
+- Async/await for AI (non-blocking)
+- 60 FPS performance target
+- And 8 more...
+
+### Project Structure
 ```
 temporal-echoes/
-├── .cursor/rules/          # Cursor MDC agent rules
+├── .cursor/rules/          # Cursor MDC agent rules + CONSTITUTION
+│   ├── CONSTITUTION.md    # ⭐ 15 immutable development principles
 │   ├── architect-supervisor.mdc
 │   ├── ai-integration-supervisor.mdc
 │   ├── data-worker.mdc
@@ -44,10 +57,21 @@ temporal-echoes/
 │   ├── tests/
 │   ├── macros/
 │   └── dbt_project.yml
-├── assignments/           # AI task planning
-│   ├── active/           # Current work items
-│   ├── completed/        # Finished work
-│   └── templates/        # Reusable templates
+├── assignments/           # Spec-Driven Development workflow
+│   ├── active/           # Current phases
+│   │   └── phase-X/
+│   │       ├── research.md      # Research findings
+│   │       ├── decisions.md     # Architecture decisions (ADRs)
+│   │       ├── PLAN.md         # Implementation plan
+│   │       ├── prompts/        # Step execution prompts
+│   │       └── README.md       # Phase tracking
+│   ├── completed/        # Finished phases with retrospectives
+│   └── templates/        # SDD templates
+│       ├── RESEARCH_TEMPLATE.md
+│       ├── DECISIONS_TEMPLATE.md
+│       ├── PHASE_TEMPLATE.md
+│       ├── STEP_TEMPLATE.md
+│       └── VALIDATION_TEMPLATE.md
 ├── tests/                # Test suite
 │   ├── unit/
 │   └── integration/
@@ -171,12 +195,20 @@ make dbt-docs
 make dbt-full
 ```
 
-## 🤖 Cursor MDC Agent Rules
+## 🤖 Cursor MDC Agent Rules & Spec-Driven Development
 
-This project includes comprehensive Cursor MDC agent rules for AI-assisted development:
+This project uses a **Spec-Driven Development (SDD)** workflow with comprehensive Cursor MDC agent rules:
+
+### Core Governance
+- **`CONSTITUTION.md`**: 15 immutable development principles
+  - Architecture, Code Quality, AI Integration, Database, Performance
+  - Deviation protocol for justified violations
+  - Constitution checkpoints at all milestones
 
 ### Supervisors (Always Apply)
-- **`architect-supervisor.mdc`**: System design orchestration, assignment management
+- **`architect-supervisor.mdc`**: System design orchestration, **SDD workflow enforcement**
+  - **Critical Rule**: NO implementation until research.md and decisions.md complete
+  - Constitution compliance checkpoints
 - **`ai-integration-supervisor.mdc`**: AI/LLM coordination, prompt engineering oversight
 
 ### Workers (Auto-attach to files)
@@ -197,26 +229,63 @@ In Cursor, the appropriate workers will automatically attach based on the files 
 @architecture-worker Should we use ECS for entity management?
 ```
 
-## 🗂️ Assignment Management
+### Spec-Driven Development Workflow
 
-Track development phases using the assignment templates:
+Every development phase follows this 4-step process:
 
-```bash
-# Create a new phase
-cp assignments/templates/PHASE_TEMPLATE.md assignments/active/phase-1-core-game-loop/PLAN.md
+1. **🔍 Research** (`research.md`) - Investigate unknowns, validate tech stack
+2. **📋 Decisions** (`decisions.md`) - Document architectural decisions (ADR format)
+3. **🛠️ Implementation** (`PLAN.md`) - Execute with constitution compliance
+4. **✅ Validation** - Verify success criteria and retrospective
 
-# Create step documentation
-cp assignments/templates/STEP_TEMPLATE.md assignments/active/phase-1-core-game-loop/step-1.md
+## 🗂️ Assignment Management (Spec-Driven Development)
 
-# Validate completed work
-cp assignments/templates/VALIDATION_TEMPLATE.md assignments/active/phase-1-core-game-loop/VALIDATION.md
+Development follows a research-first approach inspired by Spec-Kit:
+
+### Phase Structure
+```
+assignments/active/phase-X/
+├── research.md          # Research findings and tech validation
+├── decisions.md         # Architecture Decision Records (ADRs)
+├── PLAN.md             # Implementation plan
+├── prompts/            # Detailed step execution prompts
+└── README.md           # Phase tracking
 ```
 
-Supervisors will guide you through:
-1. Breaking down phases into steps
-2. Defining success criteria
-3. Running validation checklists
-4. Moving completed work to `assignments/completed/`
+### Creating a New Phase
+
+```bash
+# 1. Research Phase (REQUIRED FIRST)
+cp assignments/templates/RESEARCH_TEMPLATE.md assignments/active/phase-X/research.md
+# Complete all research topics, validate assumptions, get approval
+
+# 2. Decision Phase (REQUIRED BEFORE CODING)
+cp assignments/templates/DECISIONS_TEMPLATE.md assignments/active/phase-X/decisions.md
+# Document all major decisions using ADR format
+
+# 3. Implementation Phase (AFTER research & decisions approved)
+cp assignments/templates/PHASE_TEMPLATE.md assignments/active/phase-X/PLAN.md
+# Break down into steps, execute with constitution compliance
+
+# 4. Validation Phase
+cp assignments/templates/VALIDATION_TEMPLATE.md assignments/active/phase-X/VALIDATION.md
+# Verify success criteria, complete retrospective
+```
+
+### Supervisors Guide You Through:
+1. **Research**: Investigating unknowns, validating tech stack
+2. **Decisions**: Documenting architectural choices with trade-offs
+3. **Implementation**: Breaking down phases into steps with constitution checkpoints
+4. **Validation**: Running checklists, retrospectives
+5. **Completion**: Moving finished work to `assignments/completed/`
+
+### Constitution Compliance
+Read `.cursor/rules/CONSTITUTION.md` for the **15 immutable principles** that govern all development. Constitution checkpoints occur at:
+- Before creating phase plan
+- Before starting implementation  
+- During each step execution
+- Before code review
+- Before merging to main
 
 ## 🎯 Core Game Mechanics
 
@@ -283,11 +352,23 @@ class GameEvent:
 
 ## 🔮 Roadmap
 
-### Phase 1: Core Game Loop *(In Progress)*
+### Phase 1: Core Game Loop *(Research Phase)*
+**Current**: Completing research.md and decisions.md before implementation
+
+**Research Topics**:
+- [ ] Event sourcing with SQLite
+- [ ] Pygame event loop integration
+- [ ] State machine pattern
+- [ ] Async AI integration
+- [ ] Configuration management
+- [ ] Testing strategy
+
+**Implementation** (after research complete):
+- [ ] SQLite event store
 - [ ] Base state machine
-- [ ] Player movement system
-- [ ] Event store implementation
-- [ ] Basic rendering
+- [ ] Game context system
+- [ ] Pygame game loop (60 FPS)
+- [ ] Configuration system
 
 ### Phase 2: Combat System
 - [ ] Turn-based combat engine
@@ -317,11 +398,22 @@ class GameEvent:
 
 This is a personal learning project, but contributions are welcome! Please:
 
-1. Check existing issues or create a new one
-2. Fork the repository
-3. Create a feature branch
-4. Follow the code quality standards (`make check`)
-5. Submit a pull request
+1. **Read the Constitution**: Review `.cursor/rules/CONSTITUTION.md` for development principles
+2. Check existing issues or create a new one
+3. Fork the repository
+4. Create a feature branch following Git conventions: `type/phase-short-description`
+5. Follow the **Spec-Driven Development workflow**:
+   - Complete research.md if introducing new patterns
+   - Document decisions in decisions.md
+   - Ensure constitution compliance
+6. Follow code quality standards:
+   - Type hints on all functions
+   - >= 80% test coverage
+   - `make lint` passes
+7. Submit a pull request with:
+   - Constitution compliance verification
+   - Decision records (if applicable)
+   - Test coverage report
 
 ## 📝 License
 

@@ -2,7 +2,18 @@
 
 ## What Was Created
 
-This document summarizes the complete Cursor MDC Agent Rules system and tooling setup for Temporal Echoes.
+This document summarizes the complete Cursor MDC Agent Rules system, Spec-Driven Development (SDD) workflow, and tooling setup for Temporal Echoes.
+
+---
+
+## 🏛️ Core Governance (1 File)
+
+**`.cursor/rules/CONSTITUTION.md`** - The Foundation
+- **15 Immutable Principles** governing all development
+- Architecture, Code Quality, AI Integration, Database, Performance
+- **Deviation Protocol**: 5-step process for justified violations
+- Constitution checkpoints at all development milestones
+- Non-negotiable unless explicitly documented and approved
 
 ---
 
@@ -14,9 +25,12 @@ All files created in `.cursor/rules/`:
 
 1. **`architect-supervisor.mdc`** ⭐ Priority 1
    - System design orchestration
-   - Assignment management
+   - **Spec-Driven Development (SDD) enforcement**
+   - Assignment management (research → decisions → implementation)
+   - Constitution compliance checkpoints
    - Coordinates all architectural decisions
    - Delegates to specialized workers
+   - **Critical Rule**: NO implementation until research.md and decisions.md complete
    - **Frontmatter**: `alwaysApply: true`
 
 2. **`ai-integration-supervisor.mdc`** ⭐ Priority 2
@@ -24,6 +38,7 @@ All files created in `.cursor/rules/`:
    - Prompt engineering oversight
    - Ensures consistent AI integration
    - Manages fallback strategies
+   - Token budget enforcement (4096 tokens)
    - **Frontmatter**: `alwaysApply: true`
 
 ### Workers (Auto-attach to Files)
@@ -66,23 +81,47 @@ All files created in `.cursor/rules/`:
 
 ---
 
-## 📋 Assignment Templates (3 Files)
+## 📋 Spec-Driven Development Templates (5 Files)
 
 All files created in `assignments/templates/`:
 
-1. **`PHASE_TEMPLATE.md`**
-   - Complete phase planning structure
-   - Objectives, prerequisites, steps, validation
-   - Success criteria, integration testing
-   - Rollback plans, decision documentation
+### Core SDD Workflow Templates
 
-2. **`STEP_TEMPLATE.md`**
+1. **`RESEARCH_TEMPLATE.md`** 🔍 NEW
+   - Structured research phase (BEFORE implementation)
+   - Research topics with priority levels
+   - Tech stack validation matrix
+   - Assumptions tracking with risk assessment
+   - Performance benchmarks
+   - Security considerations
+   - Constitution compliance verification
+
+2. **`DECISIONS_TEMPLATE.md`** 📋 NEW
+   - Architecture Decision Records (ADR format)
+   - Documents alternatives considered and trade-offs
+   - Links decisions to constitution principles
+   - Tracks technical debt from deviations
+   - Decision index for quick reference
+   - Superseded decision tracking
+
+3. **`PHASE_TEMPLATE.md`** 🛠️ UPDATED
+   - **4-Phase SDD Workflow**: Research → Decisions → Implementation → Validation
+   - Hard prerequisites: research.md and decisions.md must be complete
+   - Constitution compliance checklist (all 15 principles)
+   - Retrospective section with metrics
+   - Complete phase planning structure
+   - Success criteria, integration testing
+   - Rollback plans
+
+4. **`STEP_TEMPLATE.md`** ⚡ UPDATED
    - Individual step documentation
+   - Constitution quick-check for each step
+   - Links to phase research.md and decisions.md
    - Task breakdown, implementation details
    - Success criteria (automated + manual)
    - Testing strategy, commit strategy
 
-3. **`VALIDATION_TEMPLATE.md`**
+5. **`VALIDATION_TEMPLATE.md`**
    - Comprehensive validation checklist
    - Automated tests, code quality, functional requirements
    - Architecture compliance, performance benchmarks
@@ -168,11 +207,81 @@ All files created in `assignments/templates/`:
 
 ## 📊 Project Statistics
 
-- **MDC Rules**: 8 files (~5000 lines total)
-- **Assignment Templates**: 3 files (~1000 lines total)
+- **Core Governance**: 1 file (CONSTITUTION.md, ~210 lines)
+- **MDC Rules**: 8 files (~5200 lines total)
+- **SDD Templates**: 5 files (~1850 lines total)
 - **Tooling Files**: 7 files (~800 lines total)
 - **Documentation**: 3 files (~600 lines total)
-- **Total**: 21 files created
+- **Total**: 24 files created
+
+---
+
+## 🔬 Spec-Driven Development (SDD) Workflow
+
+Temporal Echoes follows a research-first development approach inspired by Spec-Kit:
+
+### Phase Structure
+```
+assignments/active/phase-X/
+├── research.md          # Research findings (from RESEARCH_TEMPLATE.md)
+├── decisions.md         # Architecture decisions (from DECISIONS_TEMPLATE.md)
+├── PLAN.md             # Implementation plan (from PHASE_TEMPLATE.md)
+├── prompts/            # Step-by-step execution prompts
+│   ├── step-1-name.md
+│   ├── step-2-name.md
+│   └── ...
+└── README.md           # Phase tracking
+```
+
+### 4-Phase Workflow
+
+**1. 🔍 Research Phase** (`research.md`)
+- Investigate unknowns and rapidly-changing technologies
+- Validate tech stack versions and compatibility
+- Document assumptions with risk assessment
+- Run performance benchmarks
+- Identify security considerations
+- **Output**: Completed research.md with findings
+
+**2. 📋 Decision Phase** (`decisions.md`)
+- Make architectural decisions based on research
+- Document alternatives considered and trade-offs
+- Use Architecture Decision Record (ADR) format
+- Link decisions to CONSTITUTION.md principles
+- Track any technical debt from deviations
+- **Output**: Completed decisions.md with ADRs
+
+**3. 🛠️ Implementation Phase** (`PLAN.md`)
+- Execute implementation based on research and decisions
+- Follow constitution principles at each step
+- Use detailed step prompts for execution
+- Constitution checkpoints throughout
+- **Output**: Working code with tests
+
+**4. ✅ Validation Phase**
+- Verify all success criteria met
+- Check constitution compliance (all 15 principles)
+- Run retrospective with metrics
+- Move to `assignments/completed/` with learnings
+- **Output**: Validated, production-ready code
+
+### Constitution Checkpoints
+
+The SDD workflow enforces constitution compliance at:
+- ✅ Before creating phase plan (research complete)
+- ✅ Before starting implementation (decisions documented)
+- ✅ During each step execution
+- ✅ Before code review
+- ✅ Before merging to main
+
+### Benefits
+
+1. **Reduces Premature Implementation**: Can't code until research validates approach
+2. **Documents Decision-Making**: Every architectural choice has rationale
+3. **Constitution Guardrails**: 15 principles enforced at multiple checkpoints
+4. **Captures Learning**: Retrospectives and lessons learned built into workflow
+5. **Technical Debt Tracking**: Deviations must be documented and tracked
+6. **Reusable Process**: Apply same workflow to every phase
 
 ---
 
@@ -241,22 +350,47 @@ For architecture questions:
 @architecture-worker Should we use ECS for entity management?
 ```
 
-### Assignment Workflow
-1. Copy phase template to `assignments/active/phase-X/PLAN.md`
-2. `@architect-supervisor` guides implementation
-3. Workers auto-attach to relevant files
-4. Use validation template to verify completion
-5. Move to `assignments/completed/` when done
+### SDD Assignment Workflow
+1. **Research Phase**: Create `research.md` from RESEARCH_TEMPLATE.md
+   - Complete all research topics
+   - Validate assumptions and tech stack
+   - Get approval before proceeding
+2. **Decision Phase**: Create `decisions.md` from DECISIONS_TEMPLATE.md
+   - Document all major decisions using ADR format
+   - Link to constitution principles
+   - Get approval before implementation
+3. **Implementation Phase**: Create `PLAN.md` from PHASE_TEMPLATE.md
+   - Break down into detailed steps
+   - `@architect-supervisor` coordinates execution
+   - Workers auto-attach to relevant files
+   - Constitution checkpoints throughout
+4. **Validation Phase**: Use VALIDATION_TEMPLATE.md
+   - Verify all success criteria
+   - Check constitution compliance
+   - Complete retrospective
+5. **Completion**: Move to `assignments/completed/` with learnings
 
 ---
 
 ## 📈 Development Phases
 
-### Phase 1: Core Game Loop *(Ready to Start)*
+### Phase 1: Core Game Loop *(Research Phase)*
+**Current Status**: Research and decisions must be completed before implementation
+
+**Research Topics** (in `research.md`):
+- Event sourcing with SQLite
+- Pygame event loop integration
+- State machine pattern
+- Async AI integration
+- Configuration management
+- Testing strategy
+
+**Implementation** (once research complete):
 - Base state machine
 - Player movement
 - Event store
 - Basic rendering
+- Game loop with 60 FPS target
 
 ### Phase 2: Combat System
 - Turn-based combat
@@ -305,8 +439,12 @@ For architecture questions:
 
 All systems operational:
 
+- [x] **CONSTITUTION.md** created with 15 immutable principles
 - [x] 8 MDC rules created in `.cursor/rules/`
-- [x] 3 assignment templates created
+- [x] **SDD workflow** enforced in architect-supervisor.mdc
+- [x] **5 SDD templates** created (RESEARCH, DECISIONS, PHASE, STEP, VALIDATION)
+- [x] **Phase 1 research.md** initialized with 6 research topics
+- [x] **Phase 1 decisions.md** initialized with pending decisions
 - [x] Makefile with 25+ commands
 - [x] Poetry configuration (pyproject.toml)
 - [x] Docker Compose setup
@@ -322,23 +460,33 @@ All systems operational:
 ## 🎉 Success!
 
 **Temporal Echoes** is now fully configured with:
+- ✅ **CONSTITUTION.md** - 15 immutable development principles
+- ✅ **Spec-Driven Development (SDD)** - Research-first workflow
 - ✅ Cursor MDC Agent Rules (8 supervisors/workers)
-- ✅ Assignment management system
+- ✅ SDD template system (5 templates)
 - ✅ Complete development tooling
 - ✅ Docker containerization
 - ✅ Comprehensive documentation
 
-**Next Step**: Follow `SETUP_GUIDE.md` to complete installation and start Phase 1!
+**Next Step**: Complete Phase 1 research before implementation!
+
+1. Review `.cursor/rules/CONSTITUTION.md`
+2. Complete `assignments/active/phase-1-core-game-loop/research.md`
+3. Document decisions in `decisions.md`
+4. Then proceed with implementation per `PLAN.md`
 
 ---
 
 ## 📧 Questions?
 
 Refer to:
+- `.cursor/rules/CONSTITUTION.md` - **Development principles (READ FIRST)**
+- `assignments/active/phase-1-core-game-loop/research.md` - Current research
 - `README.md` - Project overview
 - `SETUP_GUIDE.md` - Installation help
-- `.cursor/rules/architect-supervisor.mdc` - Architecture guidance
-- `assignments/templates/PHASE_TEMPLATE.md` - Phase planning
+- `.cursor/rules/architect-supervisor.mdc` - Architecture & SDD workflow
+- `assignments/templates/RESEARCH_TEMPLATE.md` - Research structure
+- `assignments/templates/DECISIONS_TEMPLATE.md` - Decision documentation
 
 ---
 
