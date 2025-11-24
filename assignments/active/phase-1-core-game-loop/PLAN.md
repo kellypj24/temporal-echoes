@@ -9,19 +9,19 @@
 
 This phase follows the Spec-Driven Development (SDD) approach:
 
-1. **🔍 Research Phase** (documented in `research.md`) ✅ IN PROGRESS
+1. **🔍 Research Phase** (documented in `research.md`) ✅ **COMPLETE**
    - Investigate unknowns, validate assumptions, check dependencies
-   - **Status**: 6 research topics to complete
+   - **Status**: All 6 research topics completed (2025-11-24)
 
-2. **📋 Decision Phase** (documented in `decisions.md`) ✅ PARTIALLY COMPLETE
+2. **📋 Decision Phase** (documented in `decisions.md`) ✅ **COMPLETE**
    - Make architectural and design decisions based on research
    - Document alternatives and trade-offs
-   - **Status**: 3 decisions documented, 5 pending decisions awaiting research
+   - **Status**: All 8 decisions documented, 0 deviations (2025-11-24)
 
-3. **🛠️ Implementation Phase** (this document) ⏳ AWAITING APPROVAL
+3. **🛠️ Implementation Phase** (this document) 🟢 **READY TO START**
    - Execute steps based on research and decisions
    - Follow constitution principles
-   - **Status**: Blocked until research and decisions complete
+   - **Status**: All prerequisites met, ready for implementation
 
 4. **✅ Validation Phase** ⏳ PENDING
    - Test, review, and validate all success criteria
@@ -44,27 +44,27 @@ This phase follows the Spec-Driven Development (SDD) approach:
 - [x] Project pushed to GitHub
 - [x] Git branch created: `phase/1-core-game-loop`
 
-### Research Prerequisites
-- [ ] `research.md` completed and reviewed
-- [ ] All high-priority research topics addressed (Topics 1-4)
-- [ ] Critical assumptions validated
-- [ ] Tech stack versions confirmed
-- [ ] Performance benchmarks completed
+### Research Prerequisites ✅ **ALL COMPLETE**
+- [x] `research.md` completed and reviewed (2025-11-24)
+- [x] All high-priority research topics addressed (Topics 1-6 complete)
+- [x] Critical assumptions validated (SQLite sufficient, threading over asyncio)
+- [x] Tech stack versions confirmed (Python 3.13, Pygame, pydantic-settings)
+- [x] Performance benchmarks completed (SQLite < 10ms writes, 60 FPS achievable)
 
-### Decision Prerequisites
+### Decision Prerequisites ✅ **ALL COMPLETE**
 - [x] **DEC-0001**: SQLite for Event Store (documented)
 - [x] **DEC-0002**: Custom State Machine Pattern (documented)
 - [x] **DEC-0003**: No Rendering in Phase 1 (documented)
-- [ ] **PD-1**: Event Store Schema Design (awaiting research)
-- [ ] **PD-2**: State Machine Implementation Details (awaiting research)
-- [ ] **PD-3**: Async Integration Strategy (awaiting research)
-- [ ] **PD-4**: Game Loop Timing Model (awaiting research)
-- [ ] **PD-5**: Configuration Management Approach (awaiting research)
-- [ ] Constitution compliance verified
-- [ ] Technical debt documented (if any)
-- [ ] Implementation guidance clear
+- [x] **DEC-0004**: Hybrid CQRS Architecture (documented)
+- [x] **DEC-0005**: Threading Over Asyncio for AI (documented)
+- [x] **DEC-0006**: Fixed Timestep Game Loop (documented)
+- [x] **DEC-0007**: Pydantic Settings for Configuration (documented)
+- [x] **DEC-0008**: pytest Testing Stack (documented)
+- [x] Constitution compliance verified (0 deviations)
+- [x] Technical debt documented (none identified)
+- [x] Implementation guidance clear (each ADR includes implementation notes)
 
-**🚨 CRITICAL**: Per SDD workflow, implementation CANNOT proceed until all research and decisions are complete and approved.
+**✅ APPROVED**: All SDD prerequisites met. Implementation phase approved to proceed (2025-11-24).
 
 ## Context
 Phase 1 establishes the foundational architecture for Temporal Echoes. We're implementing event sourcing from the start to enable timeline branching later. The focus is on clean architecture, type safety, and testability - not on visual features or gameplay yet.
@@ -95,21 +95,22 @@ Phase 1 establishes the foundational architecture for Temporal Echoes. We're imp
 ### Step 1: SQLite Event Store Implementation
 **Branch**: `feature/phase-1-event-store`  
 **Supervisors**: `@architect-supervisor`, `@data-worker`  
-**Based On**: Research Topic 1 (Event Sourcing with SQLite), DEC-0001
+**Based On**: Research Topic 1, DEC-0001 (SQLite), DEC-0004 (Hybrid CQRS)
 
 **Description**: 
 Implement the core event store using SQLite with proper schema design, indexing, and transaction safety. This is the foundation for all game state persistence.
 
-**Research Guidance**:
-- Use WAL mode for better concurrency (per Research Topic 1)
-- Schema design informed by DEC-0001
-- Index on timeline_id, session_id, event_timestamp
-- Include aggregate_id + aggregate_type for CQRS preparation
-- JSON column (event_data) for full event context
-- **Hybrid CQRS Architecture** (from Research Topic 1):
-  * Phase 1: Events only (game_events table)
-  * Phase 2+: App maintains read models + dbt parses JSON independently
-  * dbt reads game_events JSON, NOT read models (two parallel paths)
+**Decision Guidance** (from DEC-0001 and DEC-0004):
+- **Database**: SQLite with WAL mode enabled (PRAGMA journal_mode=WAL)
+- **Schema**: Single `game_events` table with JSON `event_data` column
+- **Indexes**: timeline_id, session_id, event_timestamp for fast queries
+- **CQRS Prep**: Include `aggregate_id` + `aggregate_type` columns (future read models)
+- **Hybrid CQRS** (DEC-0004):
+  * Phase 1: Pure event sourcing (events only)
+  * Phase 2+: App handlers update read models, dbt transforms JSON independently
+  * Single source of truth: game_events table
+- **Performance Target**: < 10ms p95 latency for event writes
+- **Concurrency**: WAL mode for better read performance during writes
 
 **Tasks**:
 - [ ] Create `src/core/persistence.py` with EventStore class
@@ -142,16 +143,19 @@ Implement the core event store using SQLite with proper schema design, indexing,
 ### Step 2: Base State Machine
 **Branch**: `feature/phase-1-state-machine`  
 **Supervisors**: `@architect-supervisor`, `@game-logic-worker`  
-**Based On**: Research Topic 3 (State Machine Pattern), DEC-0002
+**Based On**: Research Topic 3, DEC-0002 (Custom State Machine)
 
 **Description**: 
 Implement the core state machine with state enum, transition validation, and event emission. This coordinates game modes (MENU, EXPLORING, COMBAT, etc.).
 
-**Research Guidance**:
-- Custom implementation (per DEC-0002) using enum + validation matrix
-- Explicit allowed transitions for clarity
-- Emit events on every state change (constitution principle #1)
-- Dependency injection for EventStore (constitution principle #2)
+**Decision Guidance** (from DEC-0002 and Research Topic 3):
+- **Implementation**: Custom state machine (no external library)
+- **States**: GameState enum with 8 states (MENU, EXPLORING, COMBAT, DIALOGUE, INVENTORY, TIMELINE_VIEW, PAUSED, GAME_OVER)
+- **Transitions**: Explicit `ALLOWED_TRANSITIONS` dictionary for validation
+- **Event Emission**: Emit event **before** state change (Research Topic 3)
+- **Dependency Injection**: EventStore passed via constructor (not global)
+- **Error Handling**: Raise `StateTransitionError` on invalid transitions
+- **Rationale**: Educational value, full control, easy debugging (DEC-0002)
 
 **Tasks**:
 - [ ] Create `src/core/state_machine.py` with GameStateMachine class
@@ -214,16 +218,19 @@ Create the GameContext class that holds all game state and coordinates between s
 ### Step 4: Basic Game Loop Structure
 **Branch**: `feature/phase-1-game-loop`  
 **Supervisors**: `@architect-supervisor`, `@game-logic-worker`  
-**Based On**: Research Topic 2 (Pygame Event Loop Integration), Research Topic 4 (Async AI)
+**Based On**: Research Topic 2, DEC-0003 (No Rendering), DEC-0006 (Fixed Timestep)
 
 **Description**:
-Create the main game loop structure without rendering. Handles update cycle, delta time, and state-specific updates.
+Create the main game loop structure without rendering. Handles update cycle, fixed timestep, and state-specific updates.
 
-**Research Guidance**:
-- Game loop timing model determined by PD-4 (pending research)
-- Async integration strategy from PD-3 (pending research)
-- No rendering (per DEC-0003) - console-based for Phase 1
-- Target consistent tick rate (60 FPS preparation)
+**Decision Guidance** (from DEC-0006 and Research Topic 2):
+- **Timing Model**: Fixed timestep at 60 Hz (16.67ms per tick)
+- **Pattern**: Accumulator pattern with frame skipping (Gaffer on Games)
+- **Max Frame Skip**: 10 ticks per frame (prevent spiral of death)
+- **Determinism**: Logic always uses fixed 16.67ms delta (testable, event sourcing compatible)
+- **No Rendering**: Console-based output only for Phase 1 (DEC-0003)
+- **Threading Prep**: Structure supports AIRequestQueue for Phase 4 (DEC-0005)
+- **Performance Target**: Maintain stable 60 Hz tick rate over 1000+ frames
 
 **Tasks**:
 - [ ] Create `src/core/game_loop.py` with GameLoop class
@@ -254,16 +261,19 @@ Create the main game loop structure without rendering. Handles update cycle, del
 ### Step 5: Configuration System
 **Branch**: `feature/phase-1-config`  
 **Supervisors**: `@architect-supervisor`  
-**Based On**: Research Topic 5 (Configuration Management)
+**Based On**: Research Topic 5, DEC-0007 (Pydantic Settings)
 
 **Description**:
-Implement configuration management using environment variables and config files.
+Implement configuration management using Pydantic Settings with type-safe validation.
 
-**Research Guidance**:
-- Library choice determined by PD-5 (pending research)
-- Type-safe configuration (constitution principle #3)
-- Environment variable support (.env file)
-- Validation for required settings
+**Decision Guidance** (from DEC-0007 and Research Topic 5):
+- **Library**: Pydantic Settings (`pydantic-settings` package)
+- **Base Class**: Inherit from `BaseSettings` for automatic .env loading
+- **Type Safety**: Full type hints with Pydantic `Field` for validation
+- **Validation**: Startup-time validation with clear error messages
+- **Config Fields**: database_path, target_fps, debug_mode, ollama_host, llm_model, ai_timeout
+- **Rationale**: Pydantic already a dependency, type-safe, excellent validation (DEC-0007)
+- **IDE Support**: Autocomplete and type checking work out of the box
 
 **Tasks**:
 - [ ] Create `src/core/config.py` with Config class
@@ -291,29 +301,57 @@ Implement configuration management using environment variables and config files.
 
 ## Integration Testing
 
-After all steps are complete:
+After all steps are complete, run comprehensive integration tests to validate system behavior.
+
+**Testing Strategy** (from DEC-0008):
+- **Framework**: pytest + unittest.mock + pytest-asyncio
+- **Database**: In-memory SQLite (`:memory:`) for fast, isolated tests
+- **Fixtures**: Reusable test data in `tests/fixtures/`
+- **Coverage Target**: >= 80% on all modules
 
 **Test Scenarios**:
 
-1. **Scenario 1: Basic Game Flow**
+1. **Scenario 1: Basic Game Flow** (Validates: DEC-0002, DEC-0001)
    - Setup: Fresh database, no existing data
    - Action: Start game, transition MENU → EXPLORING → COMBAT → EXPLORING → MENU
-   - Expected: All transitions succeed, all events logged, no errors
+   - Expected: All transitions succeed, all events logged in `game_events` table, no errors
+   - Validates: State machine transitions, event store persistence
 
-2. **Scenario 2: Event Store Persistence**
+2. **Scenario 2: Event Store Persistence** (Validates: DEC-0001, DEC-0004)
    - Setup: Run game for 100 state transitions
    - Action: Query event store for all events
-   - Expected: Exactly 100 events retrieved in correct order
+   - Expected: Exactly 100 events retrieved in correct chronological order
+   - Validates: Event sourcing integrity, ACID compliance
 
-3. **Scenario 3: Timeline Creation**
-   - Setup: Game in EXPLORING state
+3. **Scenario 3: Deterministic Gameplay** (Validates: DEC-0006)
+   - Setup: Fresh database, fixed seed
+   - Action: Run identical input sequence twice
+   - Expected: Identical event logs (same event_ids, timestamps, data)
+   - Validates: Fixed timestep determinism for event sourcing replay
+
+4. **Scenario 4: Timeline Creation** (Validates: DEC-0004)
+   - Setup: Game in EXPLORING state with 50 events
    - Action: Create new timeline branch
-   - Expected: New timeline_id created, events copied correctly
+   - Expected: New timeline_id created, events copied correctly to new timeline
+   - Validates: Timeline branching for CQRS preparation
 
-4. **Scenario 4: Error Handling**
+5. **Scenario 5: Error Handling** (Validates: DEC-0002)
    - Setup: Game in COMBAT state
-   - Action: Attempt invalid transition to MENU
+   - Action: Attempt invalid transition to TIMELINE_VIEW (not in ALLOWED_TRANSITIONS)
    - Expected: StateTransitionError raised, no event emitted, state unchanged
+   - Validates: Transition validation, error handling
+
+6. **Scenario 6: Configuration Loading** (Validates: DEC-0007)
+   - Setup: .env file with custom settings
+   - Action: Initialize GameConfig
+   - Expected: Settings loaded correctly with type validation
+   - Validates: Pydantic Settings integration
+
+7. **Scenario 7: Game Loop Stability** (Validates: DEC-0006)
+   - Setup: Start game loop
+   - Action: Run for 1000 ticks (~16.67 seconds at 60 Hz)
+   - Expected: Stable 60 Hz tick rate, no frame drops, memory stable
+   - Validates: Fixed timestep implementation, performance target
 
 ## Validation Checklist
 

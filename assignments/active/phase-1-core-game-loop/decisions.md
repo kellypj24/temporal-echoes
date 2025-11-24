@@ -2,14 +2,15 @@
 
 **Phase**: Phase 1  
 **Created**: 2025-11-24  
-**Status**: 🔄 Active  
+**Status**: ✅ Complete  
+**Completed**: 2025-11-24  
 
 ## Overview
 This document logs all significant architectural, design, and implementation decisions made during Phase 1. Decisions are captured using a lightweight ADR (Architecture Decision Record) format.
 
-**Total Decisions**: 3  
+**Total Decisions**: 8  
 **Constitution Deviations**: 0  
-**High Impact**: 1  
+**Critical Impact**: 4  
 
 ---
 
@@ -22,81 +23,17 @@ Quick reference table for all decisions:
 | DEC-0001 | SQLite for Event Store | 🟡 Accepted | 🔴 Critical | 2025-11-24 | ❌ | Event sourcing foundation |
 | DEC-0002 | Custom State Machine Pattern | 🟡 Accepted | 🟡 High | 2025-11-24 | ❌ | Clear transitions, testable |
 | DEC-0003 | No Rendering in Phase 1 | 🟡 Accepted | 🟢 Medium | 2025-11-24 | ❌ | Architecture-first approach |
+| DEC-0004 | Hybrid CQRS Architecture | 🟡 Accepted | 🔴 Critical | 2025-11-24 | ❌ | App read models + dbt analytics |
+| DEC-0005 | Threading Over Asyncio | 🟡 Accepted | 🔴 Critical | 2025-11-24 | ❌ | Simpler, Pygame-compatible |
+| DEC-0006 | Fixed Timestep Game Loop | 🟡 Accepted | 🔴 Critical | 2025-11-24 | ❌ | Deterministic, 60 FPS target |
+| DEC-0007 | Pydantic Settings for Config | 🟡 Accepted | 🟢 Medium | 2025-11-24 | ❌ | Type-safe, validation |
+| DEC-0008 | pytest Testing Stack | 🟡 Accepted | 🟡 High | 2025-11-24 | ❌ | Industry standard |
 
 ---
 
-## Pending Decisions
+## Completed Research-Based Decisions
 
-The following decisions require research completion before documentation:
-
-### PD-1: Event Store Schema Design
-**Status**: ⏳ Awaiting Research  
-**Depends On**: Research Topic 1 (Event Sourcing with SQLite)  
-**Impact**: 🔴 Critical  
-
-**Questions to Resolve**:
-- JSON vs separate columns for event payload?
-- Event versioning strategy (schema migration vs envelope pattern)?
-- Index strategy for timeline replay?
-- WAL mode vs default journaling?
-
-**Timeline**: To be decided after Topic 1 research completion
-
----
-
-### PD-2: State Machine Implementation
-**Status**: ⏳ Awaiting Research  
-**Depends On**: Research Topic 3 (State Machine Pattern)  
-**Impact**: 🟡 High  
-
-**Questions to Resolve**:
-- Custom implementation vs library (transitions, python-statemachine)?
-- State objects as classes or functions?
-- How to handle nested/hierarchical states?
-
-**Timeline**: To be decided after Topic 3 research completion
-
----
-
-### PD-3: Async Integration Strategy
-**Status**: ⏳ Awaiting Research  
-**Depends On**: Research Topic 4 (Async AI Integration)  
-**Impact**: 🟡 High  
-
-**Questions to Resolve**:
-- asyncio vs threading vs hybrid for AI calls?
-- How to prevent blocking Pygame loop?
-- Task cancellation strategy?
-
-**Timeline**: To be decided after Topic 4 research completion
-
----
-
-### PD-4: Game Loop Timing Model
-**Status**: ⏳ Awaiting Research  
-**Depends On**: Research Topic 2 (Pygame Event Loop Integration)  
-**Impact**: 🟡 High  
-
-**Questions to Resolve**:
-- Fixed timestep vs variable timestep?
-- How to handle frame drops?
-- Target FPS: locked 60 or variable?
-
-**Timeline**: To be decided after Topic 2 research completion
-
----
-
-### PD-5: Configuration Management Approach
-**Status**: ⏳ Awaiting Research  
-**Depends On**: Research Topic 5 (Configuration Management)  
-**Impact**: 🟢 Medium  
-
-**Questions to Resolve**:
-- Library choice: pydantic-settings, dynaconf, or python-decouple?
-- Configuration format: YAML, TOML, or Python dataclass?
-- Environment-specific config handling?
-
-**Timeline**: To be decided after Topic 5 research completion
+All pending decisions have been resolved based on completed research findings.
 
 ---
 
@@ -553,6 +490,872 @@ No deviations.
 
 ---
 
+## [DEC-0004]: Hybrid CQRS Architecture
+
+**Status**: 🟡 Accepted  
+**Date**: 2025-11-24  
+**Deciders**: @architect-supervisor, @data-worker  
+**Impact**: 🔴 Critical  
+**Constitution Deviation**: ❌ No  
+**Related Research**: Topic 1 (Event Sourcing with SQLite)
+
+### Context
+Phase 1 starts with pure event sourcing, but we need a clear evolution path for fast gameplay queries and analytics. The question is how to structure read models and dbt transformations without creating dual-write problems.
+
+**Requirements**:
+- Single source of truth for all game state
+- Fast gameplay queries (< 10ms)
+- Batch analytics for insights
+- Clear evolution path from Phase 1 to Phase 2+
+- Learning goal: Real-world CQRS patterns
+
+### Decision
+Implement **Hybrid CQRS with Two Parallel Paths**:
+
+**Phase 1 (Current)**: Pure event sourcing
+- Single `game_events` table with JSON `event_data`
+- No read models yet
+- All queries scan events directly
+
+**Phase 2+ (Future)**: Hybrid CQRS
+- **App Path**: Synchronously updates SQLite read models (`player_state`, `inventory_state`, etc.) via event handlers
+- **dbt Path**: Independently reads `game_events` JSON, transforms into DuckDB analytics tables
+- **Single Source of Truth**: `game_events` table (JSON) is authoritative
+- **No Dual-Write**: App writes events once; read models and analytics derive from events
+
+### Alternatives Considered
+
+#### Alternative 1: Pure Event Sourcing Forever
+**Description**: Never create read models, always query events
+
+**Pros**:
+- Simplest approach
+- Perfect audit trail
+- No synchronization issues
+
+**Cons**:
+- Slow queries (scan all events every time)
+- Complex business logic queries
+- Performance degrades over time
+- Not practical for real-time gameplay
+
+**Reason Rejected**: Violates constitution principle #14 (60 FPS target). Event scans will become too slow.
+
+#### Alternative 2: dbt Reads from Read Models
+**Description**: App maintains read models, dbt transforms those
+
+**Pros**:
+- dbt works with structured tables (easier)
+- Faster dbt processing
+
+**Cons**:
+- **Violates single source of truth**
+- If read models have bugs, analytics inherit them
+- Couples app and analytics pipelines
+- Harder to replay/fix historical data
+
+**Reason Rejected**: Blurs CQRS boundaries. Read models should be disposable projections, not the source for analytics.
+
+#### Alternative 3: Event Streaming to DuckDB
+**Description**: Stream events to DuckDB in real-time, app queries DuckDB
+
+**Pros**:
+- DuckDB handles both OLTP and OLAP
+- One database
+
+**Cons**:
+- Complex streaming infrastructure
+- DuckDB not optimized for OLTP writes
+- Coupling between gameplay and analytics
+- Overkill for single-player game
+
+**Reason Rejected**: Too complex for current needs, violates constitution principle #13 (database separation).
+
+### Consequences
+
+#### Positive
+- **Clear separation**: App and dbt operate independently
+- **Single source of truth**: `game_events` is authoritative
+- **Disposable read models**: Can rebuild from events anytime
+- **Learning value**: Real-world CQRS pattern
+- **Flexibility**: dbt can transform events differently than app needs
+- **Historical replay**: dbt can reprocess events for new insights
+
+#### Negative  
+- **Two systems to maintain**: App event handlers + dbt models
+- **Eventual consistency**: dbt runs async, analytics lag behind gameplay
+- **JSON parsing overhead**: dbt must parse JSON for every event
+- **More complex testing**: Need to test both paths
+
+#### Neutral
+- Standard CQRS trade-off: complexity for performance
+- Common pattern in event-sourced systems
+
+### Trade-offs Accepted
+**Giving up**: Simplicity of single path, real-time analytics  
+**Gaining**: Fast gameplay, flexible analytics, clear boundaries, learning
+
+For a project focused on learning event sourcing and dbt, this trade-off is ideal.
+
+### Implementation Notes
+
+**Phase 1: Pure Event Sourcing**
+```sql
+CREATE TABLE game_events (
+    event_id TEXT PRIMARY KEY,
+    event_timestamp REAL NOT NULL,
+    session_id TEXT NOT NULL,
+    timeline_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    aggregate_id TEXT,
+    aggregate_type TEXT,
+    event_data TEXT,  -- JSON with full context
+    metadata TEXT     -- JSON with metadata
+);
+```
+
+**Phase 2+: App Read Models** (SQLite)
+```python
+# Event handler pattern
+def handle_player_moved(event: GameEvent):
+    """Update player_state read model on PlayerMoved event."""
+    data = json.loads(event.event_data)
+    conn.execute("""
+        UPDATE player_state 
+        SET position_x = ?, position_y = ?, current_area = ?
+        WHERE player_id = ?
+    """, (data['x'], data['y'], data['area'], event.aggregate_id))
+```
+
+**Phase 2+: dbt Analytics** (DuckDB)
+```sql
+-- dbt model: staging/stg_player_events.sql
+SELECT 
+    event_id,
+    event_timestamp,
+    json_extract_string(event_data, '$.player_id') AS player_id,
+    json_extract_string(event_data, '$.x') AS position_x,
+    json_extract_string(event_data, '$.y') AS position_y
+FROM {{ source('game', 'game_events') }}
+WHERE event_type = 'PlayerMoved'
+```
+
+### Success Criteria
+- [x] Schema supports JSON event storage
+- [ ] App event handlers update read models (Phase 2+)
+- [ ] dbt parses JSON independently (Phase 2+)
+- [ ] Read models can be rebuilt from events
+- [ ] Analytics lag is acceptable (< 5 minutes for dbt runs)
+- [ ] No dual-write bugs (events are single source of truth)
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation Strategy | Owner |
+|------|-----------|--------|---------------------|-------|
+| JSON parsing performance | 🟢 Low | 🟡 High | DuckDB is fast at JSON, benchmark early | @data-worker |
+| Read model sync bugs | 🟡 Med | 🟡 High | Comprehensive tests, rebuild script | @data-worker |
+| Analytics lag too high | 🟢 Low | 🟢 Med | Incremental dbt models, optimize queries | @data-worker |
+| Complexity overwhelms | 🟡 Med | 🟡 High | Start simple (Phase 1), evolve gradually | @architect-supervisor |
+
+### Related Decisions
+- Depends on: DEC-0001 (SQLite event store)
+- Influences: All future phases (read model design, dbt development)
+
+### Constitution Compliance
+**Principle #1 (Event Sourcing)**: ✅ Events are single source of truth  
+**Principle #11 (Events Immutable)**: ✅ Events never modified  
+**Principle #13 (Database Separation)**: ✅ SQLite (OLTP) + DuckDB (OLAP)
+
+No deviations.
+
+### References
+- [CQRS by Martin Fowler](https://martinfowler.com/bliki/CQRS.html)
+- [Event Sourcing Projections](https://domaincentric.net/blog/event-sourcing-projections)
+- Research Topic 1: Event Sourcing with SQLite
+
+### Changelog
+- **2025-11-24**: Decision accepted based on Research Topic 1 findings
+
+---
+
+## [DEC-0005]: Threading Over Asyncio for AI
+
+**Status**: 🟡 Accepted  
+**Date**: 2025-11-24  
+**Deciders**: @architect-supervisor, @ai-worker, @ai-integration-supervisor  
+**Impact**: 🔴 Critical  
+**Constitution Deviation**: ❌ No  
+**Related Research**: Topic 4 (Async AI Integration), Topic 2 (Pygame Integration)
+
+### Context
+Phase 4 will integrate Ollama for AI Dungeon Master capabilities. AI calls must not block the game loop (60 FPS target). The question is whether to use full asyncio or threading for async integration.
+
+**Requirements**:
+- Non-blocking AI calls (< 5s timeout)
+- Compatible with Pygame's synchronous event loop
+- Simple to debug and maintain
+- Fallback to rule-based content on failure
+
+### Decision
+Use **Threading + Queue Pattern** for AI integration, not full asyncio.
+
+**Implementation**:
+- Background thread processes AI requests from queue
+- Game loop submits requests (non-blocking)
+- Game loop polls response queue every frame
+- Automatic fallback if queue full or request times out
+
+### Alternatives Considered
+
+#### Alternative 1: Full Asyncio Integration
+**Description**: Convert game loop to async, use `aiohttp` for Ollama
+
+**Pros**:
+- "Modern" Python approach
+- Better for 100+ concurrent requests
+- Async ecosystem support
+
+**Cons**:
+- **Pygame isn't async-native** (requires wrapper)
+- Need `aiosqlite` instead of standard SQLite
+- Complex event loop management
+- Steep learning curve
+- Harder debugging (async stack traces)
+- Overkill for single-player (< 10 concurrent requests)
+
+**Reason Rejected**: Adds massive complexity for minimal benefit. Threading is sufficient for our use case.
+
+#### Alternative 2: Synchronous Calls with Timeout
+**Description**: Block game loop during AI calls, enforce timeout
+
+**Pros**:
+- Simplest implementation
+- No threading/async complexity
+
+**Cons**:
+- **Violates constitution principle #9** (non-blocking AI)
+- **Violates principle #14** (60 FPS target)
+- Game freezes for up to 5 seconds
+- Terrible player experience
+
+**Reason Rejected**: Unacceptable UX, violates core principles.
+
+#### Alternative 3: Hybrid (asyncio.run_in_executor)
+**Description**: Use threading under the hood via asyncio
+
+**Pros**:
+- Async interface
+- Threading implementation
+
+**Cons**:
+- Worst of both worlds (async complexity + threading)
+- No benefit over pure threading
+- Still need async event loop
+
+**Reason Rejected**: Adds complexity without benefit.
+
+### Consequences
+
+#### Positive
+- Simple, well-understood pattern
+- Compatible with Pygame's sync loop
+- Works with standard `requests` library
+- Easy debugging (linear stack traces)
+- Familiar to most Python developers
+- Sufficient performance for single-player
+
+#### Negative  
+- Not "modern" async Python
+- Manual queue management
+- Can't handle 100+ concurrent requests (not needed)
+
+#### Neutral
+- Standard approach for Pygame + background tasks
+- Same pattern used in many Pygame projects
+
+### Trade-offs Accepted
+**Giving up**: Async ecosystem, theoretical scalability  
+**Gaining**: Simplicity, Pygame compatibility, easier debugging
+
+For a single-player RPG learning project, this is the clear winner.
+
+### Implementation Notes
+
+**AIRequestQueue Pattern** (from Research Topic 4):
+```python
+from threading import Thread
+from queue import Queue
+
+class AIRequestQueue:
+    def __init__(self):
+        self.request_queue = Queue(maxsize=10)
+        self.response_queue = Queue()
+        self._worker = Thread(target=self._process, daemon=True)
+        self._worker.start()
+    
+    def submit_request(self, request: AIRequest) -> None:
+        """Non-blocking submission."""
+        try:
+            self.request_queue.put(request, block=False)
+        except Full:
+            # Queue full: Use fallback immediately
+            request.fallback()
+    
+    def process_responses(self) -> None:
+        """Called every frame in game loop."""
+        while not self.response_queue.empty():
+            response = self.response_queue.get_nowait()
+            # Trigger callback with AI response
+```
+
+**Integration with Game Loop**:
+```python
+# In game loop (every frame)
+ai_queue.process_responses()  # ~0.1ms overhead
+```
+
+### Success Criteria
+- [ ] AI requests don't block game loop (Phase 4)
+- [ ] 60 FPS maintained with 10 concurrent AI requests
+- [ ] Timeout enforced at 5 seconds
+- [ ] Fallbacks triggered on failure
+- [ ] Queue backpressure prevents memory bloat
+- [ ] Clean shutdown on game exit
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation Strategy | Owner |
+|------|-----------|--------|---------------------|-------|
+| Threading bugs | 🟡 Med | 🟡 High | Comprehensive tests, simple design | @ai-worker |
+| Performance insufficient | 🟢 Low | 🟡 High | Benchmark early, can migrate to asyncio if needed | @ai-integration-supervisor |
+| Queue overflow | 🟢 Low | 🟢 Med | Fixed queue size, immediate fallback | @ai-worker |
+
+### Related Decisions
+- Depends on: DEC-0006 (game loop structure)
+- Influences: Phase 4 AI integration
+
+### Constitution Compliance
+**Principle #9 (Async AI)**: ✅ Threading ensures non-blocking  
+**Principle #9 (5s Timeout)**: ✅ Enforced at HTTP request level  
+**Principle #9 (Fallbacks)**: ✅ Every request has rule-based fallback  
+**Principle #14 (60 FPS)**: ✅ ~0.1ms overhead per frame
+
+No deviations.
+
+### References
+- Research Topic 4: Async AI Integration
+- Research Topic 2: Pygame Event Loop Integration
+- [Python Threading Documentation](https://docs.python.org/3/library/threading.html)
+
+### Changelog
+- **2025-11-24**: Decision accepted based on Research Topics 2 and 4
+
+---
+
+## [DEC-0006]: Fixed Timestep Game Loop
+
+**Status**: 🟡 Accepted  
+**Date**: 2025-11-24  
+**Deciders**: @architect-supervisor, @game-logic-worker, @pygame-worker  
+**Impact**: 🔴 Critical  
+**Constitution Deviation**: ❌ No  
+**Related Research**: Topic 2 (Pygame Event Loop Integration)
+
+### Context
+The game loop timing model affects determinism, testing, and player experience. Need to decide between fixed timestep, variable timestep, or hybrid approaches.
+
+**Requirements**:
+- Deterministic gameplay (same inputs = same outputs)
+- Smooth rendering at 60 FPS
+- Testable (consistent tick rate for tests)
+- Handle frame drops gracefully
+
+### Decision
+Use **Fixed Timestep with Interpolation** pattern.
+
+**Implementation**:
+- **Physics/Logic**: 60 Hz fixed timestep (16.67ms per tick)
+- **Rendering**: Variable framerate with interpolation
+- **Frame drops**: Accumulate time, catch up with multiple logic ticks
+- **Max catch-up**: 10 ticks per frame (prevent spiral of death)
+
+### Alternatives Considered
+
+#### Alternative 1: Variable Timestep
+**Description**: Update logic based on actual elapsed time (delta time)
+
+**Pros**:
+- Simpler implementation
+- No interpolation needed
+- Adapts to any framerate
+
+**Cons**:
+- **Non-deterministic** (timing-dependent bugs)
+- Harder to test (variable delta time)
+- Physics instability with large deltas
+- Replay systems become complex
+
+**Reason Rejected**: RPG needs deterministic behavior for event sourcing and timeline branching. Variable timestep would make replay unreliable.
+
+#### Alternative 2: Pure Fixed Timestep (No Interpolation)
+**Description**: Lock both logic and rendering to 60 FPS
+
+**Pros**:
+- Simplest fixed timestep
+- Perfectly deterministic
+
+**Cons**:
+- Choppy on displays != 60 Hz
+- Wasted CPU if rendering faster than 60 FPS
+- No visual smoothness benefit
+
+**Reason Rejected**: Unnecessarily rigid. Interpolation provides smoother visuals at no cost to determinism.
+
+#### Alternative 3: Semi-Fixed (Gaffer on Games)
+**Description**: Fixed timestep with variable render time and interpolation
+
+**Pros**:
+- Deterministic logic
+- Smooth rendering
+- Industry standard
+
+**Cons**:
+- More complex than variable
+- Interpolation adds code
+
+**Reason Accepted**: This is our choice (DEC-0006). Best of both worlds.
+
+### Consequences
+
+#### Positive
+- **Deterministic gameplay**: Reproducible for testing and replay
+- **Smooth rendering**: Interpolation on fast displays
+- **Event sourcing compatible**: Fixed ticks make event replay reliable
+- **Testable**: Can control tick rate in tests
+- **Standard pattern**: Well-documented (Gaffer on Games)
+
+#### Negative  
+- More complex than variable timestep
+- Need interpolation logic for rendering (Phase 4+)
+- Slightly higher CPU on frame drops
+
+#### Neutral
+- Common approach in professional game engines
+- ~150 lines of code
+
+### Trade-offs Accepted
+**Giving up**: Implementation simplicity  
+**Gaining**: Determinism, testability, smooth rendering
+
+For an event-sourced RPG with timeline branching, determinism is critical.
+
+### Implementation Notes
+
+**Game Loop Structure** (from Research Topic 2):
+```python
+class GameLoop:
+    TARGET_FPS = 60
+    TICK_RATE = 1.0 / TARGET_FPS  # 16.67ms
+    MAX_FRAME_SKIP = 10  # Prevent spiral of death
+    
+    def run(self):
+        accumulator = 0.0
+        last_time = time.perf_counter()
+        
+        while self.running:
+            current_time = time.perf_counter()
+            frame_time = current_time - last_time
+            last_time = current_time
+            
+            accumulator += frame_time
+            
+            # Fixed timestep logic updates
+            ticks = 0
+            while accumulator >= self.TICK_RATE and ticks < self.MAX_FRAME_SKIP:
+                self.update(self.TICK_RATE)  # Fixed delta
+                accumulator -= self.TICK_RATE
+                ticks += 1
+            
+            # Variable framerate rendering (Phase 4+)
+            alpha = accumulator / self.TICK_RATE  # Interpolation factor
+            self.render(alpha)
+```
+
+**Key Points**:
+- Logic always uses `16.67ms` delta (deterministic)
+- Rendering interpolates between states (smooth)
+- Frame drops trigger catch-up (max 10 ticks)
+- Spiral of death prevented by `MAX_FRAME_SKIP`
+
+### Success Criteria
+- [ ] Logic runs at exactly 60 Hz (measured over 1000 frames)
+- [ ] Deterministic: Same input sequence produces same events
+- [ ] Frame drops handled gracefully (no crash)
+- [ ] Tests can control tick rate
+- [ ] Rendering smooth on 120 Hz displays (Phase 4+)
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation Strategy | Owner |
+|------|-----------|--------|---------------------|-------|
+| Spiral of death (CPU overload) | 🟡 Med | 🟡 High | MAX_FRAME_SKIP limit, performance optimization | @game-logic-worker |
+| Interpolation bugs | 🟢 Low | 🟢 Med | Only interpolate rendering, not logic | @pygame-worker |
+| Testing complexity | 🟢 Low | 🟢 Med | Mock time in tests, inject clock | @game-logic-worker |
+
+### Related Decisions
+- Depends on: DEC-0002 (state machine needs deterministic ticks)
+- Influences: All gameplay systems, rendering
+
+### Constitution Compliance
+**Principle #14 (60 FPS Target)**: ✅ Fixed 60 Hz tick rate  
+**Principle #1 (Event Sourcing)**: ✅ Deterministic ticks enable reliable replay
+
+No deviations.
+
+### References
+- [Fix Your Timestep! by Glenn Fiedler](https://gafferongames.com/post/fix_your_timestep/)
+- Research Topic 2: Pygame Event Loop Integration
+- [Game Programming Patterns - Game Loop](https://gameprogrammingpatterns.com/game-loop.html)
+
+### Changelog
+- **2025-11-24**: Decision accepted based on Research Topic 2
+
+---
+
+## [DEC-0007]: Pydantic Settings for Configuration
+
+**Status**: 🟡 Accepted  
+**Date**: 2025-11-24  
+**Deciders**: @architect-supervisor  
+**Impact**: 🟢 Medium  
+**Constitution Deviation**: ❌ No  
+**Related Research**: Topic 5 (Configuration Management)
+
+### Context
+Need type-safe configuration management with environment variable support. Several libraries available: pydantic-settings, dynaconf, python-decouple.
+
+**Requirements**:
+- Type safety (constitution principle #3)
+- Environment variable support (.env files)
+- Validation at startup
+- Simple to use and maintain
+
+### Decision
+Use **Pydantic Settings** (`pydantic-settings` package) with `BaseSettings`.
+
+**Rationale**:
+- Type-safe with automatic validation
+- Automatic `.env` file loading
+- Pydantic already a dependency (constitution, data validation)
+- Good IDE support (type hints)
+- Industry standard
+
+### Alternatives Considered
+
+#### Alternative 1: dynaconf
+**Description**: Flexible configuration library
+
+**Pros**:
+- Supports multiple formats (YAML, TOML, JSON)
+- Environment-specific configs
+- Feature-rich
+
+**Cons**:
+- Additional dependency
+- More complexity than needed
+- Learning curve
+- Overkill for simple use case
+
+**Reason Rejected**: Too complex for current needs. Pydantic is simpler and sufficient.
+
+#### Alternative 2: python-decouple
+**Description**: Lightweight config library
+
+**Pros**:
+- Very simple
+- Small footprint
+- Good for .env files
+
+**Cons**:
+- No type safety
+- No validation
+- Manual parsing
+- Less powerful than Pydantic
+
+**Reason Rejected**: Violates constitution principle #3 (type safety). Pydantic is better.
+
+#### Alternative 3: Manual os.getenv()
+**Description**: Read environment variables directly
+
+**Pros**:
+- No dependency
+- Extremely simple
+
+**Cons**:
+- No type safety
+- No validation
+- No .env file support (need python-dotenv)
+- Error-prone
+
+**Reason Rejected**: Too primitive, violates type safety principle.
+
+### Consequences
+
+#### Positive
+- Type-safe configuration with validation
+- Automatic .env loading
+- IDE autocomplete and type checking
+- Pydantic already a dependency (no new dependency)
+- Clear error messages on invalid config
+
+#### Negative  
+- Pydantic is a large dependency (but already used)
+- Slightly verbose syntax
+
+#### Neutral
+- Industry standard approach
+- Well-documented
+
+### Trade-offs Accepted
+**Giving up**: Format flexibility (YAML/TOML), minimal dependencies  
+**Gaining**: Type safety, validation, simplicity
+
+For a learning project emphasizing type safety, this is ideal.
+
+### Implementation Notes
+
+**Configuration Class** (from Research Topic 5):
+```python
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+class GameConfig(BaseSettings):
+    """Type-safe game configuration."""
+    
+    # Database
+    database_path: str = Field(default="data/events.db", env="DATABASE_PATH")
+    
+    # Game Settings
+    target_fps: int = Field(default=60, ge=30, le=144, env="TARGET_FPS")
+    debug_mode: bool = Field(default=False, env="DEBUG_MODE")
+    
+    # AI Settings (Phase 4+)
+    ollama_host: str = Field(default="localhost:11434", env="OLLAMA_HOST")
+    llm_model: str = Field(default="llama3.2", env="LLM_MODEL")
+    ai_timeout: float = Field(default=5.0, ge=1.0, le=30.0, env="AI_TIMEOUT")
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+```
+
+**Usage**:
+```python
+config = GameConfig()  # Loads from .env automatically
+print(config.target_fps)  # Type-safe access
+```
+
+### Success Criteria
+- [x] Pydantic Settings added to dependencies
+- [ ] GameConfig class created
+- [ ] .env.example updated with all variables
+- [ ] Validation errors clear and helpful
+- [ ] Unit tests for configuration loading
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation Strategy | Owner |
+|------|-----------|--------|---------------------|-------|
+| Config validation too strict | 🟢 Low | 🟢 Low | Sensible defaults, clear error messages | @architect-supervisor |
+| Dependency size | 🟢 Low | 🟢 Low | Already using Pydantic | @architect-supervisor |
+
+### Related Decisions
+- Depends on: None
+- Influences: All system initialization
+
+### Constitution Compliance
+**Principle #3 (Type Safety)**: ✅ Pydantic provides full type safety  
+**Principle #6 (Error Handling)**: ✅ Clear validation errors
+
+No deviations.
+
+### References
+- [Pydantic Settings Documentation](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+- Research Topic 5: Configuration Management
+
+### Changelog
+- **2025-11-24**: Decision accepted based on Research Topic 5
+
+---
+
+## [DEC-0008]: pytest Testing Stack
+
+**Status**: 🟡 Accepted  
+**Date**: 2025-11-24  
+**Deciders**: @architect-supervisor  
+**Impact**: 🟡 High  
+**Constitution Deviation**: ❌ No  
+**Related Research**: Topic 6 (Testing Strategy)
+
+### Context
+Need comprehensive testing strategy for Phase 1 and beyond. Must support unit tests, integration tests, async tests (Phase 4+), and achieve >= 80% coverage.
+
+**Requirements**:
+- Unit testing framework
+- Mocking support
+- Async test support (Phase 4+)
+- Coverage tracking
+- Fast test execution
+
+### Decision
+Use **pytest + unittest.mock + pytest-asyncio** testing stack.
+
+**Rationale**:
+- pytest is industry standard
+- unittest.mock built-in (no extra dependency)
+- pytest-asyncio for future AI tests
+- Already configured in project
+- Excellent fixture system
+
+### Alternatives Considered
+
+#### Alternative 1: unittest (Standard Library)
+**Description**: Python's built-in testing framework
+
+**Pros**:
+- No dependency
+- Built-in to Python
+- Familiar to many developers
+
+**Cons**:
+- More verbose than pytest
+- Weaker fixture system
+- Less powerful assertions
+- No async support out-of-the-box
+
+**Reason Rejected**: pytest is superior in every way. Already configured.
+
+#### Alternative 2: pytest + pytest-mock
+**Description**: Use pytest-mock instead of unittest.mock
+
+**Pros**:
+- Cleaner syntax
+- pytest-specific features
+
+**Cons**:
+- Additional dependency
+- unittest.mock is sufficient
+- Not significantly better
+
+**Reason Rejected**: unittest.mock is built-in and sufficient. No need for extra dependency.
+
+### Consequences
+
+#### Positive
+- Industry standard testing approach
+- Excellent fixture system (reusable test data)
+- Clear assertion errors
+- Async support for Phase 4+
+- Fast test execution (in-memory database)
+- Good IDE integration
+
+#### Negative  
+- pytest-asyncio adds dependency (but needed for Phase 4)
+- Learning curve if unfamiliar with fixtures
+
+#### Neutral
+- Well-documented and widely used
+- Large ecosystem of plugins
+
+### Trade-offs Accepted
+**Giving up**: Minimalism (stdlib only)  
+**Gaining**: Productivity, clarity, async support
+
+For a project with AI integration, pytest-asyncio is essential.
+
+### Implementation Notes
+
+**Test Organization** (from Research Topic 6):
+```
+tests/
+├── unit/                    # Fast, isolated tests
+│   ├── test_event_store.py
+│   ├── test_state_machine.py
+│   └── test_config.py
+├── integration/             # Cross-system tests
+│   ├── test_game_loop.py
+│   └── test_ai_integration.py  # Phase 4+
+└── fixtures/
+    ├── event_fixtures.py    # Reusable test data
+    └── game_fixtures.py
+```
+
+**Fixture Examples**:
+```python
+import pytest
+
+@pytest.fixture
+def event_store():
+    """In-memory database for fast tests."""
+    store = EventStore(":memory:")
+    yield store
+    store.close()
+
+@pytest.fixture
+def sample_events():
+    """Reusable test events."""
+    return [
+        GameEvent(event_type="game_start", ...),
+        GameEvent(event_type="player_move", ...),
+    ]
+```
+
+**Async Testing** (Phase 4+):
+```python
+import pytest
+
+@pytest.mark.asyncio
+async def test_ai_request_timeout(ai_queue):
+    """Verify AI timeout triggers fallback."""
+    # Test async AI behavior
+    ...
+```
+
+### Success Criteria
+- [x] pytest configured in pyproject.toml
+- [x] pytest-asyncio added to dependencies
+- [ ] Test directory structure created
+- [ ] Fixtures for common test data
+- [ ] >= 80% coverage on all modules
+- [ ] Tests run in < 5 seconds (Phase 1)
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation Strategy | Owner |
+|------|-----------|--------|---------------------|-------|
+| Slow tests (fixtures heavy) | 🟢 Low | 🟢 Med | Use in-memory database, mock external systems | @architect-supervisor |
+| Fixture complexity | 🟢 Low | 🟢 Low | Keep fixtures simple, document usage | @architect-supervisor |
+
+### Related Decisions
+- Depends on: DEC-0001 (event store needs in-memory testing)
+- Influences: All development (TDD approach)
+
+### Constitution Compliance
+**Principle #5 (Testing)**: ✅ >= 80% coverage enforced  
+**Principle #7 (Documentation)**: ✅ Tests serve as documentation
+
+No deviations.
+
+### References
+- [pytest Documentation](https://docs.pytest.org/)
+- [pytest-asyncio Documentation](https://pytest-asyncio.readthedocs.io/)
+- Research Topic 6: Testing Strategy
+
+### Changelog
+- **2025-11-24**: Decision accepted based on Research Topic 6
+
+---
+
 ## Notes for Completing This Document
 
 Once research is complete:
@@ -593,10 +1396,10 @@ All decisions will be evaluated against `.cursor/rules/CONSTITUTION.md` principl
 **Approval Date**: [To be filled]  
 
 **Sign-off Checklist**:
-- [ ] All pending decisions resolved
-- [ ] Research findings documented
-- [ ] Constitution compliance verified
-- [ ] Technical debt tracked (if any)
-- [ ] Implementation guidance clear
-- [ ] Ready for PLAN.md execution
+- [x] All pending decisions resolved (8 total decisions documented)
+- [x] Research findings documented (all 6 topics complete)
+- [x] Constitution compliance verified (0 deviations)
+- [x] Technical debt tracked (none identified)
+- [x] Implementation guidance clear (each ADR includes implementation notes)
+- [x] Ready for PLAN.md execution
 
