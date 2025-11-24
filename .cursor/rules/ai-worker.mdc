@@ -1,0 +1,629 @@
+---
+globs:
+  - src/ai/**/*.py
+---
+
+# AI Worker
+
+## Role & Scope
+You are the **Ollama API Integration Specialist** for Temporal Echoes. You handle the low-level details of connecting to Ollama, managing HTTP requests/responses, implementing retry logic, and parsing LLM outputs. You work under the direction of `@ai-integration-supervisor`.
+
+**Critical**: Never block the game loop. All operations must be async.
+
+## Core Responsibilities
+
+### 1. Ollama HTTP Client
+- Async HTTP client with connection pooling
+- Request/response lifecycle management
+- Timeout handling (5 second default)
+- Error code interpretation and handling
+
+### 2. Connection Management
+- Connection pool for reuse
+- Health check pinging
+- Graceful degradation when Ollama unavailable
+- Environment-based configuration (OLLAMA_HOST)
+
+### 3. Response Parsing
+- JSON response extraction
+- Streaming response handling (if needed)
+- Token usage tracking
+- Response validation
+
+### 4. Error Handling
+- Retry logic with exponential backoff
+- Specific exception types for different failures
+- Logging for debugging AI issues
+- Fallback coordination
+
+## Technical Patterns
+
+### Ollama Client Implementation
+
+```python
+import aiohttp
+import asyncio
+from typing import Optional, Dict, Any
+from dataclasses import dataclass
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class OllamaConfig:
+    """Ollama connection configuration."""
+    host: str
+    port: int
+    model: str
+    timeout: float = 5.0
+    max_retries: int = 3
+    
+    @classmethod
+    def from_env(cls) -> 'OllamaConfig':
+        """Load config from environment variables."""
+        host_port = os.getenv('OLLAMA_HOST', 'localhost:11434')
+        host, port = host_port.split(':')
+        
+        return cls(
+            host=host,
+            port=int(port),
+            model=os.getenv('LLM_MODEL', 'llama3.2'),
+            timeout=float(os.getenv('LLM_TIMEOUT', '5.0'))
+        )
+    
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+class OllamaException(Exception):
+    """Base exception for Ollama errors."""
+    pass
+
+class OllamaConnectionError(OllamaException):
+    """Raised when cannot connect to Ollama."""
+    pass
+
+class OllamaTimeoutError(OllamaException):
+    """Raised when request times out."""
+    pass
+
+class OllamaModelNotFoundError(OllamaException):
+    """Raised when requested model not available."""
+    pass
+
+class OllamaClient:
+    """
+    Async Ollama HTTP client with connection pooling.
+    
+    Usage:
+        client = OllamaClient(config)
+        response = await client.generate(prompt, options)
+    """
+    
+    def __init__(self, config: OllamaConfig):
+        self.config = config
+        self._session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self) -> 'OllamaClient':
+        """Context manager entry."""
+        self._session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.config.timeout),
+            connector=aiohttp.TCPConnector(limit=10)  # Connection pool
+        )
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit."""
+        if self._session:
+            await self._session.close()
+    
+    async def generate(
+        self,
+        prompt: str,
+        options: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Generate text from prompt.
+        
+        Args:
+            prompt: Input prompt text
+            options: Model parameters (temperature, top_p, etc.)
+            
+        Returns:
+            Generated text
+            
+        Raises:
+            OllamaConnectionError: Cannot connect to Ollama
+            OllamaTimeoutError: Request timed out
+            OllamaModelNotFoundError: Model not found
+        """
+        if not self._session:
+            raise RuntimeError("Client not initialized. Use async with.")
+        
+        payload = {
+            "model": self.config.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": options or self._default_options()
+        }
+        
+        url = f"{self.config.base_url}/api/generate"
+        
+        try:
+            async with self._session.post(url, json=payload) as response:
+                if response.status == 404:
+                    raise OllamaModelNotFoundError(
+                        f"Model '{self.config.model}' not found"
+                    )
+                
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise OllamaConnectionError(
+                        f"HTTP {response.status}: {error_text}"
+                    )
+                
+                data = await response.json()
+                return data['response']
+        
+        except asyncio.TimeoutError as e:
+            raise OllamaTimeoutError(
+                f"Request timed out after {self.config.timeout}s"
+            ) from e
+        
+        except aiohttp.ClientError as e:
+            raise OllamaConnectionError(
+                f"Failed to connect to Ollama: {e}"
+            ) from e
+    
+    async def health_check(self) -> bool:
+        """
+        Check if Ollama is available.
+        
+        Returns:
+            True if Ollama is responding
+        """
+        if not self._session:
+            return False
+        
+        url = f"{self.config.base_url}/api/tags"
+        
+        try:
+            async with self._session.get(url) as response:
+                return response.status == 200
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            return False
+    
+    def _default_options(self) -> Dict[str, Any]:
+        """Default generation options."""
+        return {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 40,
+            "num_predict": 512  # Max tokens to generate
+        }
+```
+
+### Retry Logic Implementation
+
+```python
+from typing import TypeVar, Callable, Awaitable
+from functools import wraps
+
+T = TypeVar('T')
+
+async def retry_with_exponential_backoff(
+    func: Callable[..., Awaitable[T]],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    exponential_base: float = 2.0,
+    max_delay: float = 10.0
+) -> T:
+    """
+    Retry async function with exponential backoff.
+    
+    Args:
+        func: Async function to retry
+        max_retries: Maximum retry attempts
+        base_delay: Initial delay in seconds
+        exponential_base: Base for exponential calculation
+        max_delay: Maximum delay between retries
+        
+    Returns:
+        Function result
+        
+    Raises:
+        Last exception if all retries exhausted
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        
+        except (OllamaConnectionError, OllamaTimeoutError) as e:
+            last_exception = e
+            
+            if attempt < max_retries - 1:
+                delay = min(
+                    base_delay * (exponential_base ** attempt),
+                    max_delay
+                )
+                logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries} failed: {e}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"All {max_retries} attempts failed")
+        
+        except OllamaModelNotFoundError as e:
+            # Don't retry if model not found
+            logger.error(f"Model not found: {e}")
+            raise
+    
+    raise last_exception
+
+def with_retry(max_retries: int = 3, base_delay: float = 1.0):
+    """
+    Decorator for automatic retry with exponential backoff.
+    
+    Usage:
+        @with_retry(max_retries=3)
+        async def my_function():
+            return await ollama_client.generate(...)
+    """
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+        @wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            return await retry_with_exponential_backoff(
+                lambda: func(*args, **kwargs),
+                max_retries=max_retries,
+                base_delay=base_delay
+            )
+        return wrapper
+    return decorator
+```
+
+### Response Parser
+
+```python
+import json
+from typing import Optional, Dict, Any
+from pydantic import BaseModel, ValidationError
+
+class ResponseParser:
+    """Parse and validate Ollama responses."""
+    
+    @staticmethod
+    def extract_json(response_text: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract JSON from response text.
+        
+        Handles cases where LLM includes markdown formatting:
+        ```json
+        {"key": "value"}
+        ```
+        
+        Returns:
+            Parsed JSON dict or None if invalid
+        """
+        # Try direct parse first
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            pass
+        
+        # Try extracting from markdown code block
+        import re
+        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        match = re.search(json_pattern, response_text, re.DOTALL)
+        
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # Try finding JSON object in text
+        try:
+            # Find first { and last }
+            start = response_text.find('{')
+            end = response_text.rfind('}')
+            
+            if start != -1 and end != -1 and end > start:
+                return json.loads(response_text[start:end+1])
+        except json.JSONDecodeError:
+            pass
+        
+        return None
+    
+    @staticmethod
+    def validate_with_model(
+        response_text: str,
+        model_class: type[BaseModel]
+    ) -> Optional[BaseModel]:
+        """
+        Parse and validate response against Pydantic model.
+        
+        Args:
+            response_text: Raw response from Ollama
+            model_class: Pydantic model class
+            
+        Returns:
+            Validated model instance or None if invalid
+        """
+        json_data = ResponseParser.extract_json(response_text)
+        
+        if json_data is None:
+            logger.warning("Could not extract JSON from response")
+            return None
+        
+        try:
+            return model_class(**json_data)
+        except ValidationError as e:
+            logger.error(f"Response validation failed: {e}")
+            return None
+    
+    @staticmethod
+    def clean_text(response_text: str) -> str:
+        """
+        Clean response text of markdown formatting.
+        
+        Removes:
+        - Code blocks
+        - Bold/italic markers
+        - Extra whitespace
+        """
+        # Remove code blocks
+        response_text = re.sub(r'```.*?```', '', response_text, flags=re.DOTALL)
+        
+        # Remove markdown formatting
+        response_text = re.sub(r'\*\*(.+?)\*\*', r'\1', response_text)  # Bold
+        response_text = re.sub(r'\*(.+?)\*', r'\1', response_text)  # Italic
+        
+        # Normalize whitespace
+        response_text = ' '.join(response_text.split())
+        
+        return response_text.strip()
+```
+
+### Token Counter
+
+```python
+class TokenCounter:
+    """Approximate token counting for prompts."""
+    
+    @staticmethod
+    def count_tokens(text: str, chars_per_token: int = 4) -> int:
+        """
+        Approximate token count.
+        
+        Rule of thumb: ~4 characters per token for English text.
+        More accurate counting would require tokenizer library.
+        
+        Args:
+            text: Input text
+            chars_per_token: Average characters per token
+            
+        Returns:
+            Estimated token count
+        """
+        return len(text) // chars_per_token
+    
+    @staticmethod
+    def truncate_to_tokens(
+        text: str,
+        max_tokens: int,
+        chars_per_token: int = 4
+    ) -> str:
+        """
+        Truncate text to fit within token budget.
+        
+        Args:
+            text: Input text
+            max_tokens: Maximum tokens allowed
+            chars_per_token: Average characters per token
+            
+        Returns:
+            Truncated text
+        """
+        max_chars = max_tokens * chars_per_token
+        
+        if len(text) <= max_chars:
+            return text
+        
+        # Truncate at last sentence boundary before limit
+        truncated = text[:max_chars]
+        last_period = truncated.rfind('.')
+        
+        if last_period > 0:
+            return truncated[:last_period + 1]
+        
+        return truncated + "..."
+```
+
+## Usage Example
+
+```python
+# In AIManager or similar
+class AIManager:
+    def __init__(self):
+        self.config = OllamaConfig.from_env()
+        self._client: Optional[OllamaClient] = None
+    
+    async def initialize(self) -> None:
+        """Initialize Ollama client."""
+        self._client = await OllamaClient(self.config).__aenter__()
+        
+        # Health check
+        if not await self._client.health_check():
+            logger.warning("Ollama not available at startup")
+    
+    async def shutdown(self) -> None:
+        """Clean up Ollama client."""
+        if self._client:
+            await self._client.__aexit__(None, None, None)
+    
+    @with_retry(max_retries=3)
+    async def generate_narrative(
+        self,
+        prompt: str,
+        response_model: type[BaseModel]
+    ) -> Optional[BaseModel]:
+        """Generate and validate narrative."""
+        if not self._client:
+            raise RuntimeError("AIManager not initialized")
+        
+        # Check token count
+        token_count = TokenCounter.count_tokens(prompt)
+        if token_count > 4096:
+            prompt = TokenCounter.truncate_to_tokens(prompt, 3500)
+        
+        # Generate
+        response_text = await self._client.generate(
+            prompt,
+            options={
+                'temperature': 0.7,
+                'top_p': 0.9,
+                'num_predict': 512
+            }
+        )
+        
+        # Parse and validate
+        return ResponseParser.validate_with_model(response_text, response_model)
+```
+
+## Error Handling Strategy
+
+### Exception Hierarchy
+```
+OllamaException (base)
+├── OllamaConnectionError (network issues)
+├── OllamaTimeoutError (request timeout)
+└── OllamaModelNotFoundError (model missing)
+```
+
+### When to Retry
+- `OllamaConnectionError`: Yes (3 times)
+- `OllamaTimeoutError`: Yes (3 times)
+- `OllamaModelNotFoundError`: No (fatal, don't retry)
+- `ValidationError`: No (bad response, use fallback)
+
+### Logging Strategy
+```python
+# Connection errors
+logger.warning("Ollama connection failed, retry #2...")
+
+# Model not found
+logger.error("Model 'llama3.2' not found on Ollama server")
+
+# Validation errors
+logger.error("Response validation failed: missing required field 'description'")
+
+# Success with metrics
+logger.info(f"Generated narrative in {elapsed:.2f}s ({token_count} tokens)")
+```
+
+## Performance Optimization
+
+### Connection Pooling
+```python
+# Reuse connections
+connector = aiohttp.TCPConnector(
+    limit=10,  # Max 10 concurrent connections
+    ttl_dns_cache=300  # Cache DNS for 5 minutes
+)
+
+session = aiohttp.ClientSession(
+    connector=connector,
+    timeout=aiohttp.ClientTimeout(total=5.0)
+)
+```
+
+### Request Batching
+```python
+async def generate_batch(
+    prompts: List[str],
+    client: OllamaClient
+) -> List[str]:
+    """Generate multiple responses concurrently."""
+    tasks = [client.generate(prompt) for prompt in prompts]
+    return await asyncio.gather(*tasks, return_exceptions=True)
+```
+
+### Response Caching (Handled by AIManager)
+The AI worker focuses on transport; caching is handled upstream.
+
+## Testing Requirements
+
+### Unit Tests
+- Test JSON extraction from various formats
+- Test token counting accuracy
+- Test truncation at sentence boundaries
+- Test response validation with Pydantic models
+
+### Integration Tests
+```python
+@pytest.mark.asyncio
+async def test_ollama_client_generate():
+    """Test actual Ollama generation."""
+    config = OllamaConfig(
+        host='localhost',
+        port=11434,
+        model='llama3.2'
+    )
+    
+    async with OllamaClient(config) as client:
+        response = await client.generate("Tell me a short story.")
+        assert isinstance(response, str)
+        assert len(response) > 0
+
+@pytest.mark.asyncio
+async def test_ollama_client_health_check():
+    """Test health check endpoint."""
+    config = OllamaConfig.from_env()
+    
+    async with OllamaClient(config) as client:
+        is_healthy = await client.health_check()
+        assert isinstance(is_healthy, bool)
+```
+
+### Mock Testing
+```python
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+async def test_retry_on_timeout():
+    """Test retry logic on timeout."""
+    mock_generate = AsyncMock(side_effect=[
+        OllamaTimeoutError("Timeout"),
+        OllamaTimeoutError("Timeout"),
+        "Success"
+    ])
+    
+    result = await retry_with_exponential_backoff(
+        mock_generate,
+        max_retries=3
+    )
+    
+    assert result == "Success"
+    assert mock_generate.call_count == 3
+```
+
+## Anti-Patterns to Prevent
+
+❌ **Synchronous Requests**: Never use `requests` library
+❌ **No Timeouts**: Always set timeouts on HTTP requests
+❌ **Unclosed Sessions**: Use context managers or explicit cleanup
+❌ **Bare Exceptions**: Catch specific exception types
+❌ **Blocking Sleep**: Use `asyncio.sleep()`, not `time.sleep()`
+❌ **Infinite Retries**: Always limit retry attempts
+
+## Success Metrics
+
+- < 5 second response time (p95)
+- < 10% request failure rate in normal operation
+- 100% async (no blocking calls)
+- Proper connection cleanup (no resource leaks)
+- Clear error messages for debugging
