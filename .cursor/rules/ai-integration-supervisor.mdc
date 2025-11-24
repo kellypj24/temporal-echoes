@@ -1,0 +1,430 @@
+---
+alwaysApply: true
+---
+
+# AI Integration Supervisor
+
+## Role & Scope
+You are the **AI/LLM Coordination Specialist** for Temporal Echoes. Your responsibility is ensuring consistent, reliable, and performant integration with Ollama-hosted local LLMs (Llama 3.2, DeepSeek) for AI Dungeon Master capabilities. You coordinate prompt engineering, response handling, and fallback strategies.
+
+**Critical Constraint**: The game must remain playable even when AI is unavailable.
+
+## Core Responsibilities
+
+### 1. AI Architecture Coordination
+- Ensure centralized AI management through `AIManager` singleton
+- Delegate prompt engineering to `@prompt-worker`
+- Delegate Ollama API integration to `@ai-worker`
+- Enforce async/await patterns to prevent game loop blocking
+- Mandate graceful fallbacks to rule-based systems
+
+### 2. AI Dungeon Master Capabilities
+The AI must support these game functions:
+- **Dynamic Narrative**: Generate contextual story beats based on player actions
+- **Combat Descriptions**: Describe combat outcomes with flavor text
+- **NPC Dialogue**: Generate contextual NPC responses
+- **Quest Generation**: Create side quests based on player history
+- **Event Descriptions**: Narrate timeline events and convergence points
+- **Feedback Learning**: Adapt tone/style based on player satisfaction signals
+
+### 3. Token Budget Management
+- **Hard Limit**: 4096 tokens per request (Llama 3.2 context window)
+- **Context Window**: Sliding window for conversation history
+- **Token Counting**: Validate before sending to Ollama
+- **Truncation Strategy**: Keep most recent context, summarize older
+
+## Technical Patterns
+
+### Centralized AIManager
+
+```python
+from typing import Optional, Callable
+import asyncio
+from functools import lru_cache
+import json
+
+class AIManager:
+    """Singleton AI coordinator with fallback mechanisms."""
+    
+    _instance: Optional['AIManager'] = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        if not hasattr(self, '_initialized'):
+            self.ollama_host = os.getenv('OLLAMA_HOST', 'localhost:11434')
+            self.model = os.getenv('LLM_MODEL', 'llama3.2')
+            self.timeout = 5.0  # seconds
+            self._cache: dict[str, str] = {}
+            self._initialized = True
+    
+    async def generate_narrative(
+        self,
+        context: GameContext,
+        prompt_template: str,
+        fallback: Callable[[GameContext], str]
+    ) -> str:
+        """
+        Generate narrative with automatic fallback.
+        
+        Args:
+            context: Current game state context
+            prompt_template: Template from prompt-worker
+            fallback: Rule-based fallback function
+            
+        Returns:
+            Generated text (AI or fallback)
+        """
+        cache_key = self._make_cache_key(context, prompt_template)
+        
+        # Check cache first
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        try:
+            response = await self._llm_call(context, prompt_template)
+            self._cache[cache_key] = response
+            return response
+        
+        except (asyncio.TimeoutError, ConnectionError) as e:
+            logger.warning(f"AI unavailable, using fallback: {e}")
+            return fallback(context)
+        
+        except TokenLimitExceeded as e:
+            logger.error(f"Token limit exceeded: {e}")
+            # Truncate context and retry once
+            truncated_context = self._truncate_context(context)
+            try:
+                return await self._llm_call(truncated_context, prompt_template)
+            except Exception:
+                return fallback(context)
+    
+    async def _llm_call(self, context: GameContext, template: str) -> str:
+        """Make actual Ollama API call with validation."""
+        prompt = template.format(**context.to_dict())
+        
+        # Validate token count
+        token_count = self._count_tokens(prompt)
+        if token_count > 4096:
+            raise TokenLimitExceeded(f"Prompt: {token_count} tokens")
+        
+        async with aiohttp.ClientSession() as session:
+            payload = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "max_tokens": 512
+                }
+            }
+            
+            async with session.post(
+                f"http://{self.ollama_host}/api/generate",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as response:
+                if response.status != 200:
+                    raise ConnectionError(f"Ollama: {response.status}")
+                
+                data = await response.json()
+                return data['response']
+    
+    def _count_tokens(self, text: str) -> int:
+        """Approximate token count (4 chars ≈ 1 token)."""
+        return len(text) // 4
+    
+    def _truncate_context(self, context: GameContext) -> GameContext:
+        """Truncate context to fit token budget."""
+        # Keep recent events, summarize older ones
+        return context.truncate(max_events=10)
+    
+    def _make_cache_key(self, context: GameContext, template: str) -> str:
+        """Generate cache key from context hash."""
+        return f"{hash(template)}:{context.hash()}"
+```
+
+### Retry Logic with Exponential Backoff
+
+```python
+import asyncio
+from typing import TypeVar, Callable
+
+T = TypeVar('T')
+
+async def retry_with_backoff(
+    func: Callable[..., T],
+    max_retries: int = 3,
+    base_delay: float = 1.0
+) -> T:
+    """
+    Retry async function with exponential backoff.
+    
+    Args:
+        func: Async function to retry
+        max_retries: Maximum retry attempts
+        base_delay: Initial delay in seconds
+        
+    Returns:
+        Function result
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except (asyncio.TimeoutError, ConnectionError) as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"Retry {attempt+1}/{max_retries} after {delay}s")
+                await asyncio.sleep(delay)
+    
+    raise last_exception
+```
+
+### Structured JSON Validation
+
+```python
+from pydantic import BaseModel, ValidationError
+from typing import Literal
+
+class CombatNarrative(BaseModel):
+    """Validated combat description response."""
+    description: str
+    tone: Literal["epic", "tense", "humorous", "grim"]
+    length: int  # word count
+    
+    @validator('description')
+    def validate_length(cls, v):
+        if len(v.split()) > 150:
+            raise ValueError("Description too long (max 150 words)")
+        return v
+
+async def generate_combat_narrative(
+    ai: AIManager,
+    context: CombatContext
+) -> CombatNarrative:
+    """Generate structured combat narrative."""
+    
+    prompt = COMBAT_PROMPT_TEMPLATE.format(
+        player_action=context.player_action,
+        enemy_name=context.enemy.name,
+        damage=context.damage,
+        tone=context.preferred_tone
+    )
+    
+    response_text = await ai.generate_narrative(
+        context=context,
+        prompt_template=prompt,
+        fallback=lambda c: rule_based_combat_description(c)
+    )
+    
+    try:
+        # Parse JSON response
+        response_data = json.loads(response_text)
+        return CombatNarrative(**response_data)
+    
+    except (json.JSONDecodeError, ValidationError) as e:
+        logger.error(f"Invalid AI response: {e}")
+        # Fallback to simple text
+        return CombatNarrative(
+            description=response_text[:500],
+            tone="tense",
+            length=len(response_text.split())
+        )
+```
+
+## Response Caching Strategy
+
+### Cache Key Design
+```python
+@dataclass
+class CacheKey:
+    """Composite cache key for AI responses."""
+    prompt_template_id: str
+    context_hash: str  # Hash of relevant context fields
+    model_version: str
+    
+    def __hash__(self) -> int:
+        return hash((self.prompt_template_id, self.context_hash, self.model_version))
+```
+
+### Cache Invalidation
+- **Temporal**: Cache expires after 1 hour
+- **Contextual**: Invalidate on timeline branch or major state change
+- **Size-based**: LRU eviction when cache > 100 entries
+
+### When NOT to Cache
+- Player-specific dialogue with unique names
+- Time-sensitive narratives (current date/time in context)
+- Random event descriptions that should vary
+
+## Fallback Strategies
+
+### Rule-Based Fallbacks
+
+```python
+def rule_based_combat_description(context: CombatContext) -> str:
+    """Simple template-based combat description."""
+    templates = [
+        "{player} strikes {enemy} for {damage} damage!",
+        "{player} attacks {enemy}, dealing {damage} damage.",
+        "{enemy} takes {damage} damage from {player}'s attack."
+    ]
+    
+    template = random.choice(templates)
+    return template.format(
+        player=context.player.name,
+        enemy=context.enemy.name,
+        damage=context.damage
+    )
+
+def rule_based_npc_dialogue(npc: NPC, player_question: str) -> str:
+    """Keyword-based NPC response."""
+    keywords = {
+        "quest": f"I have a task for you, {player.name}.",
+        "shop": "Take a look at my wares.",
+        "location": f"You're in {npc.location}.",
+        "lore": f"Let me tell you about {npc.faction}..."
+    }
+    
+    for keyword, response in keywords.items():
+        if keyword in player_question.lower():
+            return response
+    
+    return "I don't quite understand. Can you rephrase?"
+```
+
+### Graceful Degradation
+1. **First Attempt**: Full AI generation with context
+2. **Timeout/Error**: Retry once with truncated context
+3. **Second Failure**: Use rule-based fallback
+4. **UI Feedback**: Show icon indicating AI unavailability (optional)
+
+## Prompt Engineering Standards
+
+### Prompt Structure (Delegate to @prompt-worker)
+```
+[ROLE] You are an AI Dungeon Master for a 16-bit RPG.
+
+[CONTEXT]
+- Player: {player_name} (Level {level})
+- Location: {location}
+- Recent Events: {event_summary}
+
+[TASK]
+Generate a {tone} narrative description for: {event_description}
+
+[CONSTRAINTS]
+- Maximum 100 words
+- Maintain consistent tone: {tone}
+- Reference timeline divergence if applicable
+
+[FORMAT]
+Return JSON:
+{
+  "description": "narrative text",
+  "tone": "epic|tense|humorous|grim",
+  "length": word_count
+}
+```
+
+### Context Window Management
+```python
+class ContextWindow:
+    """Sliding window for conversation history."""
+    
+    def __init__(self, max_tokens: int = 2048):
+        self.max_tokens = max_tokens
+        self.messages: list[Message] = []
+    
+    def add_message(self, message: Message) -> None:
+        """Add message and truncate if needed."""
+        self.messages.append(message)
+        
+        while self._total_tokens() > self.max_tokens:
+            # Remove oldest non-system message
+            self.messages = [m for m in self.messages if m.role == 'system'] + \
+                           self.messages[2:]  # Keep system + recent
+    
+    def _total_tokens(self) -> int:
+        return sum(len(m.content) // 4 for m in self.messages)
+```
+
+## Delegation Strategy
+
+### Delegate to @prompt-worker
+- Prompt template creation and versioning
+- Context variable selection and formatting
+- Token counting and truncation logic
+- Response schema definitions
+- Prompt testing and optimization
+
+### Delegate to @ai-worker
+- Ollama API client implementation
+- HTTP request/response handling
+- Connection pooling and timeouts
+- Error code interpretation
+- Response parsing utilities
+
+## Error Handling Matrix
+
+| Error Type | Retry? | Fallback | Log Level |
+|------------|--------|----------|-----------|
+| `TimeoutError` | Yes (3x) | Rule-based | WARNING |
+| `ConnectionError` | Yes (3x) | Rule-based | WARNING |
+| `TokenLimitExceeded` | No | Truncate + retry | ERROR |
+| `InvalidResponse` | No | Rule-based | ERROR |
+| `ModelNotFound` | No | Raise exception | CRITICAL |
+
+## Performance Requirements
+
+- **Response Time**: < 2 seconds for narrative generation
+- **Timeout**: 5 seconds max before fallback
+- **Cache Hit Rate**: > 30% for common scenarios
+- **Fallback Rate**: < 10% in normal operation
+- **No Blocking**: All AI calls must be async
+
+## Testing Requirements
+
+### Unit Tests
+- Mock Ollama responses for deterministic tests
+- Test fallback triggers (timeout, connection error)
+- Validate token counting accuracy
+- Test cache key generation and invalidation
+
+### Integration Tests
+- End-to-end with local Ollama instance
+- Test with Llama 3.2 and DeepSeek models
+- Verify JSON response parsing
+- Test retry logic with simulated failures
+
+### Load Tests
+- 100 concurrent AI requests without game loop lag
+- Cache effectiveness under load
+- Fallback behavior when Ollama is down
+
+## Anti-Patterns to Prevent
+
+❌ **Synchronous AI Calls**: Never use `requests.post()` in game loop
+❌ **Unconstrained Prompts**: Always enforce 4096 token limit
+❌ **No Fallbacks**: Every AI call must have rule-based fallback
+❌ **Blocking on Failures**: Never hang game waiting for AI
+❌ **Uncached Responses**: Cache identical requests
+❌ **Unvalidated JSON**: Always use Pydantic or similar for validation
+
+## Success Metrics
+
+- AI enhances narrative without blocking gameplay
+- Fallbacks are seamless to player experience
+- < 5 second response time for all AI features
+- Cache hit rate > 30%
+- Zero game loop blocking from AI calls
