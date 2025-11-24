@@ -1,8 +1,31 @@
 # Phase 1: Core Game Loop
 
-**Branch**: `phase/1-core-game-loop`  
-**Status**: In Progress  
-**Started**: 2024-11-24  
+**Status**: 🔄 In Progress  
+**Started**: 2025-11-24  
+**Completed**: _____________  
+**Branch**: `phase/1-core-game-loop`
+
+## Phase Workflow
+
+This phase follows the Spec-Driven Development (SDD) approach:
+
+1. **🔍 Research Phase** (documented in `research.md`) ✅ IN PROGRESS
+   - Investigate unknowns, validate assumptions, check dependencies
+   - **Status**: 6 research topics to complete
+
+2. **📋 Decision Phase** (documented in `decisions.md`) ✅ PARTIALLY COMPLETE
+   - Make architectural and design decisions based on research
+   - Document alternatives and trade-offs
+   - **Status**: 3 decisions documented, 5 pending decisions awaiting research
+
+3. **🛠️ Implementation Phase** (this document) ⏳ AWAITING APPROVAL
+   - Execute steps based on research and decisions
+   - Follow constitution principles
+   - **Status**: Blocked until research and decisions complete
+
+4. **✅ Validation Phase** ⏳ PENDING
+   - Test, review, and validate all success criteria
+   - Ensure constitution compliance
 
 ## Objectives
 - Implement SQLite event store for event sourcing architecture
@@ -12,20 +35,51 @@
 - Set up basic game loop structure (no rendering yet)
 
 ## Prerequisites
+
+### Hard Prerequisites
 - [x] Development environment set up
-- [x] Poetry dependencies installed
-- [x] Docker with Ollama running
-- [x] dbt project structure initialized
+- [x] Poetry dependencies installed (`make install`)
+- [x] Docker with Ollama running (`make docker-up`)
+- [x] dbt project structure initialized (`make dbt-init`)
 - [x] Project pushed to GitHub
+- [x] Git branch created: `phase/1-core-game-loop`
+
+### Research Prerequisites
+- [ ] `research.md` completed and reviewed
+- [ ] All high-priority research topics addressed (Topics 1-4)
+- [ ] Critical assumptions validated
+- [ ] Tech stack versions confirmed
+- [ ] Performance benchmarks completed
+
+### Decision Prerequisites
+- [x] **DEC-0001**: SQLite for Event Store (documented)
+- [x] **DEC-0002**: Custom State Machine Pattern (documented)
+- [x] **DEC-0003**: No Rendering in Phase 1 (documented)
+- [ ] **PD-1**: Event Store Schema Design (awaiting research)
+- [ ] **PD-2**: State Machine Implementation Details (awaiting research)
+- [ ] **PD-3**: Async Integration Strategy (awaiting research)
+- [ ] **PD-4**: Game Loop Timing Model (awaiting research)
+- [ ] **PD-5**: Configuration Management Approach (awaiting research)
+- [ ] Constitution compliance verified
+- [ ] Technical debt documented (if any)
+- [ ] Implementation guidance clear
+
+**🚨 CRITICAL**: Per SDD workflow, implementation CANNOT proceed until all research and decisions are complete and approved.
 
 ## Context
 Phase 1 establishes the foundational architecture for Temporal Echoes. We're implementing event sourcing from the start to enable timeline branching later. The focus is on clean architecture, type safety, and testability - not on visual features or gameplay yet.
 
-**Architecture Principles:**
-- Event sourcing: All state changes emit immutable events
-- Dependency injection: No global state or singletons (except AIManager)
-- Type safety: Type hints on all functions
-- Test-driven: Write tests alongside implementation
+**Architecture Principles** (from `.cursor/rules/CONSTITUTION.md`):
+- Event sourcing: All state changes emit immutable events (Principle #1)
+- Dependency injection: No global state or singletons except AIManager (Principle #2)
+- Type safety: Type hints on all functions (Principle #3)
+- Test-driven: Write tests alongside implementation (Principle #5)
+- Separation of concerns: No rendering in core logic (Principle #4)
+
+**Related Documents**:
+- `research.md` - Research findings for this phase
+- `decisions.md` - Decision log for this phase (3 ADRs documented)
+- `.cursor/rules/CONSTITUTION.md` - Development principles
 
 ## Steps
 

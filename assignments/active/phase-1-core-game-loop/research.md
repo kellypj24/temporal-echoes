@@ -1,7 +1,7 @@
 # Research Document: Phase 1 - Core Game Loop
 
 **Phase**: Phase 1  
-**Created**: 2024-11-24  
+**Created**: 2025-11-24  
 **Status**: 🔄 In Progress  
 
 ## Overview
