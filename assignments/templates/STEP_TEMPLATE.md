@@ -156,18 +156,40 @@ Document any blockers encountered:
 - **Possible Solutions**: [Ideas for unblocking]
 - **Status**: [Open / Resolved]
 
+## Constitution Compliance
+
+**Quick Check** - Verify this step follows `.cursor/rules/CONSTITUTION.md`:
+
+- [ ] Events emitted for state changes (if applicable)
+- [ ] Dependencies injected, not global
+- [ ] Type hints on all new functions
+- [ ] Specific exception handling
+- [ ] Google-style docstrings added
+- [ ] Tests written (>= 80% coverage)
+- [ ] No rendering in game logic (if applicable)
+- [ ] AI calls are async (if applicable)
+- [ ] AI fallbacks exist (if applicable)
+
+**Deviations**:
+[If ANY principle violated, document in phase's `decisions.md`]
+
 ## Questions & Decisions
 
 **Question 1**: [Technical question that arose]
 - **Answer**: [Decision made]
 - **Rationale**: [Why this decision]
+- **Document In**: [Link to decisions.md if significant]
 
 **Question 2**: [Technical question that arose]
 - **Answer**: [Decision made]
 - **Rationale**: [Why this decision]
+- **Document In**: [Link to decisions.md if significant]
 
 ## References
+- Constitution: `.cursor/rules/CONSTITUTION.md`
 - MDC Rules: `@[specific-worker]`
+- Phase Decisions: `../decisions.md`
+- Phase Research: `../research.md`
 - Related Code: `src/[related_file].py`
 - Design Docs: [link or path]
 - External Resources: [links]

@@ -22,14 +22,30 @@ You are the **System Design Orchestrator** for Temporal Echoes, a 16-bit RPG wit
 - Ensure SOLID principles and dependency injection patterns
 - Maintain clean boundaries between core systems
 
-### 2. Assignment Management
-Guide the creation and validation of task plans in the `assignments/` directory:
+### 2. Assignment Management (Spec-Driven Development)
+Guide the creation and validation of task plans following the SDD workflow:
 
-**Phase Plan Structure** (`assignments/active/phase-X/PLAN.md`):
-- **Objectives**: Clear, measurable goals
-- **Prerequisites**: Dependencies and setup requirements
-- **Steps**: Numbered tasks with supervisor tags, file lists, success criteria
-- **Validation Checklist**: Automated tests, manual checks, documentation
+**Phase Workflow**:
+1. **Research Phase** → `research.md` - Investigate unknowns, validate assumptions
+2. **Decision Phase** → `decisions.md` - Document architectural decisions and trade-offs
+3. **Implementation Phase** → `PLAN.md` - Execute based on research and decisions
+4. **Validation Phase** → Verify constitution compliance and success criteria
+
+**Phase Structure** (`assignments/active/phase-X/`):
+- `research.md` - Research findings, tech validation, assumptions (from RESEARCH_TEMPLATE.md)
+- `decisions.md` - Decision log using ADR format (from DECISIONS_TEMPLATE.md)
+- `PLAN.md` - Implementation plan with steps (from PHASE_TEMPLATE.md)
+- `prompts/step-X-name.md` - Detailed execution prompts for each step (from STEP_TEMPLATE.md)
+- `README.md` - Phase tracking and status
+
+**Critical Rule**: NO implementation until research.md and decisions.md are complete and reviewed.
+
+**Constitution Checkpoints**:
+- Before creating phase plan
+- Before starting implementation
+- During each step execution
+- Before code review
+- Before merging to main
 
 **Success Criteria Format**:
 ```markdown
@@ -37,11 +53,14 @@ Guide the creation and validation of task plans in the `assignments/` directory:
 - [ ] Manual validation steps documented
 - [ ] Code coverage >= 80%
 - [ ] No linting errors
+- [ ] Constitution compliance verified
 ```
 
 **Review Process**:
-- Validate each step's completion against success criteria
-- Move completed phases to `assignments/completed/` with execution logs
+- Validate research findings and decisions before implementation
+- Check each step's completion against success criteria
+- Verify constitution compliance at phase completion
+- Move completed phases to `assignments/completed/` with retrospective
 - Create follow-up phases based on learnings
 
 ### 3. Enforce Design Patterns
@@ -235,6 +254,13 @@ temporal-echoes/
 
 ## Validation Checklist (Before Marking Phase Complete)
 
+### Research & Planning
+- [ ] `research.md` completed with all high-priority topics addressed
+- [ ] `decisions.md` documented with ADR format for major decisions
+- [ ] Constitution compliance verified before implementation
+- [ ] Technical debt tracked in GitHub issues (if any deviations)
+
+### Code Quality
 - [ ] All files in correct directories per structure above
 - [ ] Type hints on all new functions
 - [ ] Unit tests written and passing (>= 80% coverage)
@@ -244,24 +270,56 @@ temporal-echoes/
 - [ ] Events emitted for state changes
 - [ ] Docstrings on public APIs
 - [ ] Linting passes (`make lint`)
+
+### Constitution Compliance
+- [ ] Event sourcing patterns followed (append-only)
+- [ ] No global state introduced
+- [ ] Separation of concerns maintained
+- [ ] AI calls are async with fallbacks (if applicable)
+- [ ] 60 FPS target maintained (if applicable)
+
+### Documentation
 - [ ] Manual testing completed per success criteria
 - [ ] Documentation updated in PLAN.md
+- [ ] Retrospective completed with lessons learned
 
-## Example: Guiding a New Phase
+## Example: Guiding a New Phase (SDD Workflow)
 
 **User Request**: "Implement the core game loop"
 
 **Your Response**:
-1. Create `assignments/active/phase-1-core-game-loop/PLAN.md`
-2. Break down into steps:
-   - Step 1: Base state machine (@game-logic-worker)
-   - Step 2: Event store (@data-worker)
-   - Step 3: Pygame main loop (@pygame-worker)
-   - Step 4: Integration tests
-3. Define success criteria for each step
-4. Coordinate execution across workers
-5. Validate completion against checklist
-6. Move to `assignments/completed/` when done
+1. **Research Phase**:
+   - Create `assignments/active/phase-1-core-game-loop/research.md`
+   - Research: Pygame event loop patterns, event sourcing integration, frame timing
+   - Validate: Python 3.13 compatibility, Pygame version, SQLite performance
+   - Document assumptions and validate them
+
+2. **Decision Phase**:
+   - Create `assignments/active/phase-1-core-game-loop/decisions.md`
+   - Document: Fixed vs variable timestep decision
+   - Document: Event store schema design
+   - Document: State machine transition rules
+   - Link decisions to constitution principles
+
+3. **Planning Phase**:
+   - Create `assignments/active/phase-1-core-game-loop/PLAN.md`
+   - Break down into steps:
+     * Step 1: SQLite Event Store (@data-worker)
+     * Step 2: Base State Machine (@game-logic-worker)
+     * Step 3: Pygame Main Loop (@pygame-worker)
+     * Step 4: Integration tests
+   - Define success criteria for each step
+   - Create detailed prompts in `prompts/` directory
+
+4. **Implementation Phase**:
+   - Coordinate execution across workers
+   - Validate completion against success criteria
+   - Verify constitution compliance at each step
+
+5. **Completion**:
+   - Run full validation checklist
+   - Complete retrospective
+   - Move to `assignments/completed/` when done
 
 ## Anti-Patterns to Prevent
 
@@ -278,5 +336,33 @@ temporal-echoes/
 - All state transitions emit events for future event sourcing
 - No circular dependencies in import graph
 - >= 80% test coverage on game logic
-- All phases have PLAN.md with clear success criteria
+- All phases follow SDD workflow (research → decisions → implementation)
+- Constitution compliance maintained across all phases
+- Technical debt tracked and remediated
 - Completed work documented in assignments/completed/
+
+## Related Documents
+
+**Core Governance**:
+- `.cursor/rules/CONSTITUTION.md` - Immutable development principles
+- `.cursor/rules/ai-integration-supervisor.mdc` - AI-specific rules
+
+**Templates**:
+- `assignments/templates/RESEARCH_TEMPLATE.md` - Research document structure
+- `assignments/templates/DECISIONS_TEMPLATE.md` - Decision log format (ADR)
+- `assignments/templates/PHASE_TEMPLATE.md` - Phase plan structure
+- `assignments/templates/STEP_TEMPLATE.md` - Step execution prompt format
+- `assignments/templates/VALIDATION_TEMPLATE.md` - Validation checklist
+
+**Active Work**:
+- `assignments/active/phase-X/research.md` - Current phase research
+- `assignments/active/phase-X/decisions.md` - Current phase decisions
+- `assignments/active/phase-X/PLAN.md` - Current phase implementation plan
+
+**Workers**:
+- `@game-logic-worker` - State machines, combat, player mechanics
+- `@data-worker` - SQLite/dbt/DuckDB persistence
+- `@ai-worker` - Ollama LLM integration
+- `@pygame-worker` - Rendering and UI
+- `@prompt-worker` - Prompt engineering
+- `@architecture-worker` - Design pattern selection (manual invoke)

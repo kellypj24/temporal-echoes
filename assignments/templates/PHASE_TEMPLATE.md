@@ -1,18 +1,62 @@
 # Phase [X]: [Phase Name]
 
+**Status**: 🔄 In Progress / ✅ Complete / 🔲 Not Started  
+**Started**: [Date]  
+**Completed**: [Date]  
+**Branch**: `feature/phase-[X]-[short-name]`
+
+## Phase Workflow
+
+This phase follows the Spec-Driven Development (SDD) approach:
+
+1. **🔍 Research Phase** (documented in `research.md`)
+   - Investigate unknowns, validate assumptions, check dependencies
+   - Required before moving to planning
+
+2. **📋 Decision Phase** (documented in `decisions.md`)
+   - Make architectural and design decisions based on research
+   - Document alternatives and trade-offs
+
+3. **🛠️ Implementation Phase** (this document)
+   - Execute steps based on research and decisions
+   - Follow constitution principles
+
+4. **✅ Validation Phase**
+   - Test, review, and validate all success criteria
+   - Ensure constitution compliance
+
 ## Objectives
 - Primary objective 1
 - Primary objective 2
 - Primary objective 3
 
 ## Prerequisites
+
+### Hard Prerequisites
 - [ ] Completed Phase [Y]
 - [ ] Dependencies installed: [list dependencies]
 - [ ] Environment configured: [list env vars or config]
 - [ ] Database schema in place (if applicable)
 
+### Research Prerequisites
+- [ ] `research.md` completed and reviewed
+- [ ] All high-priority research topics addressed
+- [ ] Critical assumptions validated
+- [ ] Tech stack versions confirmed
+
+### Decision Prerequisites
+- [ ] `decisions.md` created with all major decisions
+- [ ] Constitution compliance verified
+- [ ] Technical debt documented (if any)
+- [ ] Implementation guidance clear
+
 ## Context
 Brief description of why this phase is important and how it fits into the overall project architecture.
+
+**Related Documents**:
+- `research.md` - Research findings for this phase
+- `decisions.md` - Decision log for this phase
+- `.cursor/rules/CONSTITUTION.md` - Development principles
 
 ## Steps
 
@@ -118,24 +162,55 @@ After all steps are complete:
 - [ ] 60 FPS maintained in game loop (if applicable)
 - [ ] AI calls don't block (if applicable)
 
+## Constitution Compliance
+
+Review against `.cursor/rules/CONSTITUTION.md` principles:
+
+### Immutable Principles Check
+- [ ] ✅ Events are append-only (no updates/deletes)
+- [ ] ✅ Dependencies injected via constructors
+- [ ] ✅ Type hints on all functions
+- [ ] ✅ Clean separation of concerns (no rendering in logic)
+- [ ] ✅ >= 80% test coverage
+- [ ] ✅ Specific error handling (no bare except)
+- [ ] ✅ Google-style docstrings on public APIs
+- [ ] ✅ All AI calls are async/non-blocking
+- [ ] ✅ AI fallbacks implemented
+- [ ] ✅ Token limits validated (4096 tokens)
+- [ ] ✅ Transactions used for multi-step DB operations
+- [ ] ✅ SQLite for OLTP, DuckDB for OLAP
+- [ ] ✅ 60 FPS target maintained
+- [ ] ✅ < 5 second AI response time
+
+### Deviations
+If ANY principles were violated, they MUST be documented in `decisions.md`:
+
+- **[Principle Name]**: [Link to decision record justifying deviation]
+- [List all deviations]
+
 ## Rollback Plan
 If this phase needs to be reverted:
 1. [Step to revert]
 2. [Step to revert]
 3. [Files to restore]
+4. Revert commits: `git revert <commit-hash>`
+5. Update decision log with rollback reason
 
-## Notes & Decisions
-Document key decisions made during this phase:
+## Retrospective
 
-**Decision 1**: [What was decided]
-- **Rationale**: [Why]
-- **Alternatives Considered**: [What else was considered]
-- **Trade-offs**: [What was gained/lost]
+### What Went Well
+[Document successes for future reference]
 
-**Decision 2**: [What was decided]
-- **Rationale**: [Why]
-- **Alternatives Considered**: [What else was considered]
-- **Trade-offs**: [What was gained/lost]
+### What Could Be Improved
+[Document challenges and how to avoid them]
+
+### Metrics
+- **Estimated Time**: [X hours]
+- **Actual Time**: [Y hours]
+- **Test Coverage**: [Z%]
+- **Lines of Code**: [N]
+- **Decisions Made**: [Count]
+- **Constitution Deviations**: [Count]
 
 ## Follow-up Phases
 What should be done after this phase:
