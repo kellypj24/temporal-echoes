@@ -1,0 +1,598 @@
+---
+globs:
+  - src/ui/**/*.py
+  - src/entities/**/*.py
+---
+
+# Pygame Worker
+
+## Role & Scope
+You are the **Rendering & UI Specialist** for Temporal Echoes. You handle all Pygame-specific code including rendering pipelines, sprite management, UI components, tile-based map rendering, and maintaining 60 FPS performance. You ensure clean separation from game logic.
+
+**Target Performance**: 60 FPS with 16-bit aesthetics.
+
+## Core Responsibilities
+
+### 1. Rendering Pipeline
+- Main render loop orchestration
+- Layer-based rendering (background, entities, UI, effects)
+- Sprite batching and blitting optimization
+- Camera/viewport management for scrolling
+
+### 2. Sprite Management
+- Sprite loading and caching
+- Sprite sheet parsing
+- Animation state machines
+- Sprite pooling for performance
+
+### 3. UI Components
+- Menu systems (MENU state)
+- HUD elements (health, inventory)
+- Dialog boxes (DIALOGUE state)
+- Timeline visualization (TIMELINE_VIEW state)
+
+### 4. Tile-Based Rendering
+- Tile map rendering
+- Map scrolling
+- Tile collision visualization (debug mode)
+- Layer compositing (ground, objects, overhead)
+
+## Technical Patterns
+
+### Main Rendering Loop
+
+```python
+import pygame
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from enum import Enum, auto
+
+@dataclass
+class RenderConfig:
+    """Rendering configuration."""
+    screen_width: int = 960  # 16:9 aspect ratio
+    screen_height: int = 540
+    tile_size: int = 32
+    target_fps: int = 60
+    vsync: bool = True
+    fullscreen: bool = False
+
+class RenderLayer(Enum):
+    """Render layers (back to front)."""
+    BACKGROUND = auto()
+    TILES_GROUND = auto()
+    TILES_OBJECTS = auto()
+    ENTITIES = auto()
+    TILES_OVERHEAD = auto()
+    UI = auto()
+    DEBUG = auto()
+
+class Renderer:
+    """
+    Main rendering coordinator.
+    
+    Responsibilities:
+    - Orchestrate layer rendering
+    - Manage viewport/camera
+    - Performance monitoring
+    """
+    
+    def __init__(self, config: RenderConfig):
+        pygame.init()
+        
+        flags = pygame.SCALED
+        if config.vsync:
+            flags |= pygame.SCALED | pygame.HWSURFACE | pygame.DOUBLEBUF
+        
+        if config.fullscreen:
+            flags |= pygame.FULLSCREEN
+        
+        self.screen = pygame.display.set_mode(
+            (config.screen_width, config.screen_height),
+            flags
+        )
+        pygame.display.set_caption("Temporal Echoes")
+        
+        self.clock = pygame.time.Clock()
+        self.config = config
+        
+        # Render layers
+        self._layers: Dict[RenderLayer, List[Renderable]] = {
+            layer: [] for layer in RenderLayer
+        }
+        
+        # Camera
+        self.camera_x = 0
+        self.camera_y = 0
+    
+    def render_frame(self) -> None:
+        """Render a single frame."""
+        # Clear screen
+        self.screen.fill((0, 0, 0))
+        
+        # Render each layer in order
+        for layer in RenderLayer:
+            renderables = self._layers[layer]
+            for renderable in renderables:
+                renderable.render(self.screen, self.camera_x, self.camera_y)
+        
+        # Flip buffer
+        pygame.display.flip()
+        
+        # Clear layer lists for next frame
+        for layer in RenderLayer:
+            self._layers[layer].clear()
+    
+    def add_renderable(self, layer: RenderLayer, renderable: 'Renderable') -> None:
+        """Add renderable to layer for this frame."""
+        self._layers[layer].append(renderable)
+    
+    def update_camera(self, target_x: int, target_y: int) -> None:
+        """Center camera on target position."""
+        self.camera_x = target_x - self.config.screen_width // 2
+        self.camera_y = target_y - self.config.screen_height // 2
+    
+    def tick(self) -> float:
+        """
+        Advance clock and return delta time.
+        
+        Returns:
+            Delta time in seconds
+        """
+        return self.clock.tick(self.config.target_fps) / 1000.0
+    
+    def get_fps(self) -> float:
+        """Get current FPS."""
+        return self.clock.get_fps()
+```
+
+### Renderable Protocol
+
+```python
+from typing import Protocol
+
+class Renderable(Protocol):
+    """Protocol for objects that can be rendered."""
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """
+        Render to surface with camera offset.
+        
+        Args:
+            surface: Target surface to render on
+            camera_x: Camera X offset
+            camera_y: Camera Y offset
+        """
+        ...
+```
+
+### Sprite Management
+
+```python
+from pathlib import Path
+
+class SpriteCache:
+    """Sprite loading and caching system."""
+    
+    def __init__(self, assets_dir: Path):
+        self.assets_dir = assets_dir / "sprites"
+        self._cache: Dict[str, pygame.Surface] = {}
+    
+    def load_sprite(self, sprite_key: str) -> pygame.Surface:
+        """
+        Load sprite with caching.
+        
+        Args:
+            sprite_key: Sprite identifier (e.g., "player/idle_0")
+            
+        Returns:
+            Pygame surface
+        """
+        if sprite_key in self._cache:
+            return self._cache[sprite_key]
+        
+        # Load from disk
+        sprite_path = self.assets_dir / f"{sprite_key}.png"
+        
+        if not sprite_path.exists():
+            raise FileNotFoundError(f"Sprite not found: {sprite_path}")
+        
+        surface = pygame.image.load(str(sprite_path)).convert_alpha()
+        self._cache[sprite_key] = surface
+        
+        return surface
+    
+    def load_sprite_sheet(
+        self,
+        sheet_key: str,
+        tile_width: int,
+        tile_height: int
+    ) -> List[pygame.Surface]:
+        """
+        Load and parse sprite sheet.
+        
+        Args:
+            sheet_key: Sheet identifier
+            tile_width: Width of each sprite in pixels
+            tile_height: Height of each sprite in pixels
+            
+        Returns:
+            List of sprite surfaces
+        """
+        sheet_path = self.assets_dir / f"{sheet_key}.png"
+        sheet = pygame.image.load(str(sheet_path)).convert_alpha()
+        
+        sprites = []
+        sheet_width, sheet_height = sheet.get_size()
+        
+        for y in range(0, sheet_height, tile_height):
+            for x in range(0, sheet_width, tile_width):
+                sprite = sheet.subsurface(
+                    pygame.Rect(x, y, tile_width, tile_height)
+                )
+                sprites.append(sprite)
+        
+        return sprites
+
+@dataclass
+class AnimationState:
+    """Animation state for sprites."""
+    frames: List[pygame.Surface]
+    frame_duration: float  # Seconds per frame
+    loop: bool = True
+    current_frame: int = 0
+    elapsed: float = 0.0
+    
+    def update(self, delta_time: float) -> None:
+        """Update animation."""
+        self.elapsed += delta_time
+        
+        if self.elapsed >= self.frame_duration:
+            self.elapsed = 0.0
+            self.current_frame += 1
+            
+            if self.current_frame >= len(self.frames):
+                if self.loop:
+                    self.current_frame = 0
+                else:
+                    self.current_frame = len(self.frames) - 1
+    
+    @property
+    def current_surface(self) -> pygame.Surface:
+        """Get current frame surface."""
+        return self.frames[self.current_frame]
+```
+
+### Entity Rendering
+
+```python
+@dataclass
+class SpriteEntity:
+    """Entity with sprite rendering."""
+    position: tuple[int, int]  # World coordinates
+    sprite_key: str
+    z_index: int = 0  # For sorting within layer
+    
+    def __init__(self, position: tuple[int, int], sprite_key: str):
+        self.position = position
+        self.sprite_key = sprite_key
+        self._sprite_cache: Optional[SpriteCache] = None
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """Render entity sprite."""
+        if not self._sprite_cache:
+            raise RuntimeError("Sprite cache not set")
+        
+        sprite = self._sprite_cache.load_sprite(self.sprite_key)
+        
+        # Convert world coordinates to screen coordinates
+        screen_x = self.position[0] - camera_x
+        screen_y = self.position[1] - camera_y
+        
+        # Only render if in viewport
+        if self._in_viewport(screen_x, screen_y, sprite, surface):
+            surface.blit(sprite, (screen_x, screen_y))
+    
+    def _in_viewport(
+        self,
+        screen_x: int,
+        screen_y: int,
+        sprite: pygame.Surface,
+        viewport: pygame.Surface
+    ) -> bool:
+        """Check if sprite is in viewport."""
+        sprite_width, sprite_height = sprite.get_size()
+        viewport_width, viewport_height = viewport.get_size()
+        
+        return (
+            screen_x + sprite_width >= 0 and
+            screen_x < viewport_width and
+            screen_y + sprite_height >= 0 and
+            screen_y < viewport_height
+        )
+```
+
+### Tile Map Rendering
+
+```python
+@dataclass
+class TileMap:
+    """Tile-based map data."""
+    width: int  # In tiles
+    height: int  # In tiles
+    tile_size: int
+    tiles: List[List[int]]  # 2D array of tile IDs
+    
+    def __post_init__(self):
+        if len(self.tiles) != self.height:
+            raise ValueError("Tile rows don't match height")
+        if any(len(row) != self.width for row in self.tiles):
+            raise ValueError("Tile columns don't match width")
+
+class TileMapRenderer:
+    """Optimized tile map rendering."""
+    
+    def __init__(self, tile_map: TileMap, tileset_sprites: List[pygame.Surface]):
+        self.tile_map = tile_map
+        self.tileset = tileset_sprites
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """
+        Render visible tiles only.
+        
+        Optimization: Only render tiles in viewport.
+        """
+        tile_size = self.tile_map.tile_size
+        viewport_width, viewport_height = surface.get_size()
+        
+        # Calculate visible tile range
+        start_tile_x = max(0, camera_x // tile_size)
+        start_tile_y = max(0, camera_y // tile_size)
+        end_tile_x = min(
+            self.tile_map.width,
+            (camera_x + viewport_width) // tile_size + 1
+        )
+        end_tile_y = min(
+            self.tile_map.height,
+            (camera_y + viewport_height) // tile_size + 1
+        )
+        
+        # Render visible tiles
+        for tile_y in range(start_tile_y, end_tile_y):
+            for tile_x in range(start_tile_x, end_tile_x):
+                tile_id = self.tile_map.tiles[tile_y][tile_x]
+                
+                if tile_id >= 0 and tile_id < len(self.tileset):
+                    sprite = self.tileset[tile_id]
+                    
+                    screen_x = tile_x * tile_size - camera_x
+                    screen_y = tile_y * tile_size - camera_y
+                    
+                    surface.blit(sprite, (screen_x, screen_y))
+```
+
+### UI Components
+
+```python
+@dataclass
+class UIRect:
+    """UI rectangle component."""
+    x: int
+    y: int
+    width: int
+    height: int
+    color: tuple[int, int, int]
+    border_color: Optional[tuple[int, int, int]] = None
+    border_width: int = 2
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """Render UI rectangle (camera-independent)."""
+        rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        
+        # Fill
+        pygame.draw.rect(surface, self.color, rect)
+        
+        # Border
+        if self.border_color:
+            pygame.draw.rect(
+                surface,
+                self.border_color,
+                rect,
+                self.border_width
+            )
+
+@dataclass
+class UIText:
+    """UI text component."""
+    text: str
+    x: int
+    y: int
+    font_name: str = "monospace"
+    font_size: int = 16
+    color: tuple[int, int, int] = (255, 255, 255)
+    
+    def __post_init__(self):
+        self._font = pygame.font.SysFont(self.font_name, self.font_size)
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """Render text (camera-independent)."""
+        text_surface = self._font.render(self.text, True, self.color)
+        surface.blit(text_surface, (self.x, self.y))
+
+class DialogBox:
+    """Dialog box UI component."""
+    
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        text: str
+    ):
+        self.rect = UIRect(
+            x, y, width, height,
+            color=(20, 20, 40),
+            border_color=(255, 255, 255),
+            border_width=3
+        )
+        self.text = UIText(
+            text,
+            x + 10,
+            y + 10,
+            font_size=14
+        )
+    
+    def render(self, surface: pygame.Surface, camera_x: int, camera_y: int) -> None:
+        """Render dialog box."""
+        self.rect.render(surface, camera_x, camera_y)
+        self.text.render(surface, camera_x, camera_y)
+```
+
+### Performance Optimization
+
+```python
+class SpritePool:
+    """Object pooling for sprites to reduce allocations."""
+    
+    def __init__(self, sprite_key: str, pool_size: int, sprite_cache: SpriteCache):
+        self.sprite_key = sprite_key
+        self._available: List[SpriteEntity] = []
+        self._in_use: List[SpriteEntity] = []
+        
+        # Pre-allocate pool
+        for _ in range(pool_size):
+            entity = SpriteEntity((0, 0), sprite_key)
+            entity._sprite_cache = sprite_cache
+            self._available.append(entity)
+    
+    def acquire(self, position: tuple[int, int]) -> SpriteEntity:
+        """Get entity from pool."""
+        if self._available:
+            entity = self._available.pop()
+            entity.position = position
+            self._in_use.append(entity)
+            return entity
+        
+        # Pool exhausted, create new
+        entity = SpriteEntity(position, self.sprite_key)
+        self._in_use.append(entity)
+        return entity
+    
+    def release(self, entity: SpriteEntity) -> None:
+        """Return entity to pool."""
+        if entity in self._in_use:
+            self._in_use.remove(entity)
+            self._available.append(entity)
+```
+
+## Input Handling
+
+```python
+class InputHandler:
+    """Process Pygame input events."""
+    
+    def __init__(self):
+        self.keys_pressed: Set[int] = set()
+        self.keys_just_pressed: Set[int] = set()
+        self.mouse_pos: tuple[int, int] = (0, 0)
+        self.mouse_clicked: bool = False
+    
+    def process_events(self) -> bool:
+        """
+        Process Pygame events.
+        
+        Returns:
+            False if quit event received
+        """
+        self.keys_just_pressed.clear()
+        self.mouse_clicked = False
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            
+            elif event.type == pygame.KEYDOWN:
+                self.keys_pressed.add(event.key)
+                self.keys_just_pressed.add(event.key)
+            
+            elif event.type == pygame.KEYUP:
+                self.keys_pressed.discard(event.key)
+            
+            elif event.type == pygame.MOUSEMOTION:
+                self.mouse_pos = event.pos
+            
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                self.mouse_clicked = True
+        
+        return True
+    
+    def is_key_down(self, key: int) -> bool:
+        """Check if key is currently held."""
+        return key in self.keys_pressed
+    
+    def is_key_just_pressed(self, key: int) -> bool:
+        """Check if key was just pressed this frame."""
+        return key in self.keys_just_pressed
+```
+
+## 16-Bit Aesthetic Guidelines
+
+### Color Palette
+- Use limited color palettes (16-256 colors)
+- Avoid gradients, use dithering instead
+- High contrast for readability
+
+### Sprite Design
+- Pixel-perfect alignment (no sub-pixel positioning)
+- Tile size: 32x32 or 16x16
+- Character sprites: 32x32 to 48x48
+
+### Effects
+- Screen shake for impacts
+- Flash on hit (color overlay)
+- Fade transitions between states
+
+## Testing Requirements
+
+### Unit Tests
+```python
+def test_sprite_cache_loading():
+    """Test sprite loading and caching."""
+    cache = SpriteCache(Path("assets"))
+    
+    sprite1 = cache.load_sprite("test_sprite")
+    sprite2 = cache.load_sprite("test_sprite")
+    
+    assert sprite1 is sprite2  # Same object (cached)
+
+def test_animation_update():
+    """Test animation frame advancement."""
+    frames = [pygame.Surface((32, 32)) for _ in range(4)]
+    anim = AnimationState(frames, frame_duration=0.1)
+    
+    anim.update(0.15)  # 1.5 frames
+    assert anim.current_frame == 1
+```
+
+### Integration Tests
+- Render 1000 sprites at 60 FPS
+- Test camera scrolling smoothness
+- Verify viewport culling optimization
+
+## Anti-Patterns to Prevent
+
+❌ **Game Logic in Rendering**: Keep rendering pure, no game state modification
+❌ **Loading During Render**: Load assets during initialization, not render loop
+❌ **No Viewport Culling**: Always check if objects are in viewport before rendering
+❌ **Creating Surfaces Each Frame**: Cache and reuse surfaces
+❌ **Unbounded Sprite Lists**: Clear renderable lists after each frame
+❌ **Synchronous Asset Loading**: Load assets async where possible
+
+## Success Metrics
+
+- Consistent 60 FPS with 100+ entities on screen
+- < 16ms frame time (p95)
+- Sprite cache hit rate > 95%
+- Zero game logic in rendering code
+- Clean separation: rendering never modifies game state
