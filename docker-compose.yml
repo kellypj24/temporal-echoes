@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Ollama LLM service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: temporal-echoes-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - temporal-network
+    restart: unless-stopped
+
+  # Game application
+  game:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.game
+    container_name: temporal-echoes-game
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=ollama:11434
+      - LLM_MODEL=llama3.2
+      - LLM_TIMEOUT=5.0
+      - DEBUG=${DEBUG:-0}
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY:-:0}
+    volumes:
+      # Mount source for hot-reload during development
+      - ./src:/app/src:ro
+      - ./dbt:/app/dbt:ro
+      - ./tests:/app/tests:ro
+      # Mount data directory for persistence
+      - ./data:/app/data
+      # Mount X11 socket for pygame display (Linux)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    networks:
+      - temporal-network
+    # Use host network mode for pygame display
+    # Comment out if not using display
+    network_mode: host
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Development helper: run tests
+  test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.game
+    container_name: temporal-echoes-test
+    command: poetry run pytest tests/ -v --cov=src
+    environment:
+      - OLLAMA_HOST=ollama:11434
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./data:/app/data
+    networks:
+      - temporal-network
+    depends_on:
+      - ollama
+    profiles:
+      - testing
+
+volumes:
+  ollama_data:
+    driver: local
+    name: temporal-echoes-ollama-data
+
+networks:
+  temporal-network:
+    driver: bridge
+    name: temporal-echoes-network
+
