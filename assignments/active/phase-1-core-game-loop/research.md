@@ -55,7 +55,9 @@ Event sourcing is the architectural foundation for timeline branching. Need to v
 - **Append-Only Pattern**: SQLite excels at sequential writes with proper indexing
 - **ACID Guarantees**: Full transaction support out of the box
 
-**2. Schema Design - Simple Approach**
+**2. Schema Design - Evolution Path to CQRS**
+
+**Phase 1: Pure Event Sourcing (Simple Start)**
 ```sql
 CREATE TABLE game_events (
     event_id TEXT PRIMARY KEY,
@@ -63,18 +65,171 @@ CREATE TABLE game_events (
     session_id TEXT NOT NULL,
     timeline_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
-    player_id TEXT NOT NULL,
-    state_before TEXT,  -- JSON
-    player_action TEXT,
-    ai_response TEXT,
-    outcome TEXT,  -- JSON
-    metadata TEXT  -- JSON for flexibility
+    aggregate_id TEXT,  -- player_id, enemy_id, item_id (entity identifier)
+    aggregate_type TEXT,  -- 'player', 'combat', 'inventory', 'timeline'
+    event_data TEXT,  -- JSON with full event context
+    metadata TEXT  -- JSON for additional context
 );
 
 -- Critical indexes for performance
 CREATE INDEX idx_timeline_id ON game_events(timeline_id, event_timestamp);
 CREATE INDEX idx_session_id ON game_events(session_id);
 CREATE INDEX idx_event_type ON game_events(event_type);
+CREATE INDEX idx_aggregate ON game_events(aggregate_id, aggregate_type);
+```
+
+**Phase 2+: CQRS Read Models (Fast Queries)**
+```sql
+-- Materialized view: Current player state
+CREATE TABLE player_state (
+    player_id TEXT PRIMARY KEY,
+    timeline_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    level INTEGER DEFAULT 1,
+    experience INTEGER DEFAULT 0,
+    health INTEGER,
+    max_health INTEGER,
+    mana INTEGER,
+    max_mana INTEGER,
+    position_x INTEGER,
+    position_y INTEGER,
+    current_area TEXT,
+    last_event_id TEXT NOT NULL,  -- Sync checkpoint
+    updated_at REAL,
+    FOREIGN KEY (last_event_id) REFERENCES game_events(event_id)
+);
+
+-- Materialized view: Inventory
+CREATE TABLE inventory_state (
+    player_id TEXT NOT NULL,
+    timeline_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_name TEXT,
+    quantity INTEGER DEFAULT 1,
+    equipped BOOLEAN DEFAULT 0,
+    last_event_id TEXT NOT NULL,
+    PRIMARY KEY (player_id, timeline_id, item_id),
+    FOREIGN KEY (last_event_id) REFERENCES game_events(event_id)
+);
+
+-- Materialized view: Timeline metadata
+CREATE TABLE timeline_state (
+    timeline_id TEXT PRIMARY KEY,
+    parent_timeline_id TEXT,
+    branched_at_event_id TEXT,
+    branch_reason TEXT,
+    created_at REAL,
+    is_active BOOLEAN DEFAULT 1,
+    convergence_point_id TEXT,
+    last_event_id TEXT NOT NULL,
+    FOREIGN KEY (branched_at_event_id) REFERENCES game_events(event_id),
+    FOREIGN KEY (last_event_id) REFERENCES game_events(event_id)
+);
+
+-- Materialized view: Combat state
+CREATE TABLE combat_state (
+    combat_id TEXT PRIMARY KEY,
+    timeline_id TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    enemy_id TEXT NOT NULL,
+    enemy_name TEXT,
+    enemy_health INTEGER,
+    turn_number INTEGER,
+    is_active BOOLEAN DEFAULT 1,
+    winner TEXT,
+    last_event_id TEXT NOT NULL,
+    FOREIGN KEY (last_event_id) REFERENCES game_events(event_id)
+);
+```
+
+**Architectural Evolution Rationale**:
+
+**Why Start with Pure Event Sourcing (Phase 1)?**
+- ✅ **Learning Focus**: Understand event sourcing fundamentals first
+- ✅ **Simplicity**: No synchronization complexity, single source of truth
+- ✅ **No Premature Optimization**: Phase 1 has no complex queries yet
+- ✅ **Rebuild Capability**: Can always add read models later by replaying events
+
+**Why Evolve to CQRS (Phase 2+)?**
+- ✅ **Performance**: Fast queries for combat, inventory, timeline comparisons
+- ✅ **dbt Analytics**: Structured tables easier to query than JSON events
+- ✅ **Relational Queries**: JOINs on player + inventory + combat state
+- ✅ **Timeline Branching**: Compare timelines efficiently
+- ✅ **UI Performance**: No event replay for every screen render
+
+**CQRS Implementation Pattern**:
+```python
+class EventStore:
+    def append_event(self, event: GameEvent) -> None:
+        """Append event and update read models (Phase 2+)."""
+        with self.conn:
+            # 1. Write to events table (source of truth)
+            self._write_event(event)
+            
+            # 2. Update read models (Phase 2+ only)
+            if self._has_read_models():
+                self._update_player_state(event)
+                self._update_inventory_state(event)
+                self._update_timeline_state(event)
+    
+    def _update_player_state(self, event: GameEvent) -> None:
+        """Project event onto player_state read model."""
+        if event.event_type == "player_level_up":
+            self.conn.execute(
+                """
+                UPDATE player_state 
+                SET level = ?, experience = ?, last_event_id = ?
+                WHERE player_id = ? AND timeline_id = ?
+                """,
+                (event.event_data['new_level'], 
+                 event.event_data['experience'],
+                 event.event_id,
+                 event.aggregate_id,
+                 event.timeline_id)
+            )
+```
+
+**Event Replay for Read Model Rebuilding**:
+```python
+def rebuild_read_models(self, timeline_id: str) -> None:
+    """Rebuild all read models from events (CQRS recovery)."""
+    # Clear existing read models for timeline
+    self._clear_read_models(timeline_id)
+    
+    # Replay all events in order
+    events = self.get_events_by_timeline(timeline_id)
+    for event in events:
+        self._update_player_state(event)
+        self._update_inventory_state(event)
+        self._update_timeline_state(event)
+```
+
+**dbt Integration with CQRS** (Phase 2+):
+```sql
+-- dbt/models/staging/stg_player_state.sql
+-- Clean staging layer from OLTP read models
+SELECT
+    player_id,
+    timeline_id,
+    name,
+    level,
+    health,
+    max_health,
+    last_event_id,
+    updated_at
+FROM {{ source('game', 'player_state') }}
+WHERE is_deleted = 0
+
+-- dbt/models/analytics/player_progression.sql
+-- Analytics on structured data (much faster than JSON parsing)
+SELECT
+    player_id,
+    timeline_id,
+    MAX(level) as max_level_reached,
+    COUNT(DISTINCT session_id) as total_sessions,
+    AVG(health / max_health) as avg_health_percentage
+FROM {{ ref('stg_player_state') }}
+GROUP BY player_id, timeline_id
 ```
 
 **3. WAL Mode is Essential**
@@ -96,12 +251,16 @@ CREATE INDEX idx_event_type ON game_events(event_type);
 - **File Size**: ~1KB per event average, manageable for development
 
 **Key Insights**:
-- SQLite is the pragmatic choice for single-player event sourcing
-- WAL mode is non-negotiable for performance
-- JSON columns provide schema flexibility without complexity
-- Proper indexing on timeline_id is critical for replay performance
-- Migration to PostgreSQL later is straightforward (event sourcing enables this)
-- File-based database simplifies development (no server to manage)
+- **SQLite is the pragmatic choice** for single-player event sourcing
+- **WAL mode is non-negotiable** for performance
+- **CQRS Evolution Path**: Start with pure event sourcing (Phase 1), evolve to CQRS read models (Phase 2+)
+- **Events as Source of Truth**: Read models can always be rebuilt from events
+- **aggregate_id + aggregate_type** pattern enables entity-level event queries
+- **Proper indexing on timeline_id** is critical for replay performance
+- **dbt Integration**: CQRS read models provide structured data for analytics (vs. parsing JSON)
+- **Timeline Branching**: Read models make timeline comparison queries fast
+- **Migration to PostgreSQL** later is straightforward (event sourcing enables this)
+- **File-based database** simplifies development (no server to manage)
 
 **Decision**:
 **DECIDED**: Use SQLite with WAL mode (documented as DEC-0001 in decisions.md)
@@ -113,14 +272,39 @@ CREATE INDEX idx_event_type ON game_events(event_type);
 - Zero ops overhead (no database server)
 
 **Implementation Guidance**:
+
+**Phase 1 (Pure Event Sourcing)**:
 1. Use `sqlite3` built-in Python module (no extra dependencies)
 2. Enable WAL mode immediately: `PRAGMA journal_mode=WAL`
 3. Use parameterized queries (SQL injection protection)
 4. Wrap multi-statement operations in transactions
 5. Index timeline_id + event_timestamp for fast queries
-6. Store complex data as JSON in TEXT columns
-7. Use ISO 8601 or Unix timestamps for event_timestamp
-8. Implement connection pooling if needed (likely not for Phase 1)
+6. Store complex data as JSON in event_data column
+7. Use Unix timestamps for event_timestamp (precision + easy arithmetic)
+8. Always include aggregate_id + aggregate_type for future CQRS
+9. Event handlers can derive current state by replaying events
+
+**Phase 2+ (CQRS Evolution)**:
+10. Create read model tables (player_state, inventory_state, etc.)
+11. Update read models synchronously in same transaction as event write
+12. Add last_event_id to all read models (rebuild capability)
+13. Implement rebuild_read_models() for recovery from events
+14. Use read models for queries, events for audit trail
+15. dbt models query read models (structured data, not JSON parsing)
+16. Timeline comparisons become simple JOINs on timeline_id
+
+**CQRS Migration Path**:
+- Phase 1: Events only (keep it simple)
+- Phase 2: Add player_state + inventory_state (combat needs fast queries)
+- Phase 3: Add timeline_state + combat_state (timeline branching)
+- Phase 4: Optimize read models based on actual query patterns
+
+**Design Pattern**:
+```
+Write Path:  Command → Event → game_events table → Update Read Models
+Read Path:   Query → Read Models directly (fast!)
+Rebuild:     game_events → Replay → Reconstruct Read Models
+```
 
 **Code Example**:
 ```python
@@ -163,9 +347,13 @@ class EventStore:
 **Confidence Level**: 🟢 High
 
 **Next Steps**:
-- Implement EventStore class in Step 1
+- **Phase 1**: Implement EventStore class with pure event sourcing
+- Include aggregate_id + aggregate_type in schema (CQRS preparation)
 - Benchmark actual performance during implementation
-- Monitor file size growth during testing  
+- Monitor file size growth during testing
+- **Phase 2**: Design read model schemas based on query patterns
+- **Phase 3**: Implement CQRS event handlers for read model updates
+- Document CQRS migration as DEC-0004 when implementing Phase 2  
 
 **References**:
 - [SQLite WAL Mode](https://www.sqlite.org/wal.html)
