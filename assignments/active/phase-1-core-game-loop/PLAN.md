@@ -69,6 +69,15 @@ This phase follows the Spec-Driven Development (SDD) approach:
 ## Context
 Phase 1 establishes the foundational architecture for Temporal Echoes. We're implementing event sourcing from the start to enable timeline branching later. The focus is on clean architecture, type safety, and testability - not on visual features or gameplay yet.
 
+**Key Architectural Decision - Hybrid CQRS** (from `research.md` Topic 1):
+- **Phase 1**: Pure event sourcing (game_events table with JSON)
+- **Phase 2+**: Two parallel paths from events:
+  1. **App Path**: Maintains SQLite read models for fast gameplay queries
+  2. **dbt Path**: Parses game_events JSON independently for analytics
+- **Single Source of Truth**: game_events (JSON) is the only authoritative source
+- **No Dual-Write**: App writes events once; read models + analytics derive from it
+- **Learning Goal**: Refine CQRS skills with real-world hybrid pattern
+
 **Architecture Principles** (from `.cursor/rules/CONSTITUTION.md`):
 - Event sourcing: All state changes emit immutable events (Principle #1)
 - Dependency injection: No global state or singletons except AIManager (Principle #2)
@@ -95,7 +104,12 @@ Implement the core event store using SQLite with proper schema design, indexing,
 - Use WAL mode for better concurrency (per Research Topic 1)
 - Schema design informed by DEC-0001
 - Index on timeline_id, session_id, event_timestamp
-- JSON column for event payload (flexibility)
+- Include aggregate_id + aggregate_type for CQRS preparation
+- JSON column (event_data) for full event context
+- **Hybrid CQRS Architecture** (from Research Topic 1):
+  * Phase 1: Events only (game_events table)
+  * Phase 2+: App maintains read models + dbt parses JSON independently
+  * dbt reads game_events JSON, NOT read models (two parallel paths)
 
 **Tasks**:
 - [ ] Create `src/core/persistence.py` with EventStore class

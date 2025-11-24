@@ -10,9 +10,11 @@ This phase establishes the foundation of Temporal Echoes with event sourcing, st
 ## Research Summary
 
 **Total Topics**: 6  
-**Completed**: 0  
-**High Priority**: 4  
-**Research Time**: 6-8 hours (estimated)  
+**Completed**: 3 (Topics 1, 5, 6)  
+**In Progress**: 0  
+**Remaining**: 3 (Topics 2, 3, 4)  
+**High Priority Remaining**: 3  
+**Research Time**: 2-4 hours remaining (estimated)  
 
 ---
 
@@ -204,33 +206,154 @@ def rebuild_read_models(self, timeline_id: str) -> None:
         self._update_timeline_state(event)
 ```
 
-**dbt Integration with CQRS** (Phase 2+):
+**Hybrid CQRS Architecture - Two Parallel Paths** (Phase 2+):
+
+**Key Insight**: App and dbt BOTH read from `game_events`, but process differently:
+
+```
+game_events (JSON - Single Source of Truth)
+    ├─> App Event Handlers ────> SQLite Read Models ──> Fast Gameplay Queries
+    └─> dbt Transformations ───> DuckDB Analytics ────> Historical Insights
+```
+
+**Path 1: App Maintains Read Models (Real-Time Gameplay)**
+```python
+# App synchronously updates read models
+class EventStore:
+    def append_event(self, event: GameEvent) -> None:
+        with self.conn:
+            # 1. Write event (source of truth)
+            self._write_event(event)
+            
+            # 2. Update read models (fast gameplay queries)
+            self._update_player_state(event)
+            self._update_inventory_state(event)
+```
+
+**Path 2: dbt Parses JSON (Batch Analytics)**
 ```sql
--- dbt/models/staging/stg_player_state.sql
--- Clean staging layer from OLTP read models
+-- dbt IGNORES SQLite read models entirely
+-- dbt reads game_events JSON and transforms independently
+
+-- dbt/models/sources.yml
+sources:
+  - name: game
+    description: Raw game events from SQLite
+    tables:
+      - name: game_events
+        description: Append-only event log with JSON payloads
+
+-- dbt/models/staging/stg_events.sql
+-- Parse JSON from raw events (dbt's job, not app's)
+WITH parsed_events AS (
+    SELECT
+        event_id,
+        event_timestamp,
+        event_type,
+        aggregate_id,
+        aggregate_type,
+        timeline_id,
+        session_id,
+        -- Parse JSON fields
+        json_extract(event_data, '$.player_name') AS player_name,
+        json_extract(event_data, '$.level') AS level,
+        json_extract(event_data, '$.health') AS health,
+        json_extract(event_data, '$.position_x') AS position_x,
+        json_extract(event_data, '$.position_y') AS position_y,
+        json_extract(event_data, '$.action') AS action,
+        json_extract(event_data, '$.outcome') AS outcome
+    FROM {{ source('game', 'game_events') }}
+)
+SELECT * FROM parsed_events
+
+-- dbt/models/intermediate/int_player_timeline_state.sql
+-- Rebuild player state from events (CQRS in dbt!)
 SELECT
-    player_id,
+    aggregate_id AS player_id,
     timeline_id,
-    name,
+    event_timestamp,
+    player_name,
     level,
     health,
-    max_health,
-    last_event_id,
-    updated_at
-FROM {{ source('game', 'player_state') }}
-WHERE is_deleted = 0
+    position_x,
+    position_y,
+    action,
+    outcome,
+    ROW_NUMBER() OVER (
+        PARTITION BY aggregate_id, timeline_id 
+        ORDER BY event_timestamp DESC
+    ) AS recency_rank
+FROM {{ ref('stg_events') }}
+WHERE aggregate_type = 'player'
 
--- dbt/models/analytics/player_progression.sql
--- Analytics on structured data (much faster than JSON parsing)
+-- dbt/models/analytics/current_player_state_by_timeline.sql
+-- Latest state per timeline (analytics CQRS)
 SELECT
     player_id,
     timeline_id,
-    MAX(level) as max_level_reached,
-    COUNT(DISTINCT session_id) as total_sessions,
-    AVG(health / max_health) as avg_health_percentage
-FROM {{ ref('stg_player_state') }}
-GROUP BY player_id, timeline_id
+    player_name,
+    level,
+    health,
+    position_x,
+    position_y,
+    event_timestamp AS last_updated
+FROM {{ ref('int_player_timeline_state') }}
+WHERE recency_rank = 1
+
+-- dbt/models/analytics/timeline_divergence_analysis.sql
+-- Compare player choices across timelines
+WITH timeline_actions AS (
+    SELECT
+        timeline_id,
+        parent_timeline_id,
+        event_type,
+        action,
+        outcome,
+        COUNT(*) as action_count
+    FROM {{ ref('stg_events') }}
+    WHERE event_type IN ('player_action', 'choice_made')
+    GROUP BY timeline_id, parent_timeline_id, event_type, action, outcome
+)
+SELECT
+    t1.timeline_id AS timeline_1,
+    t2.timeline_id AS timeline_2,
+    t1.action,
+    t1.outcome AS outcome_timeline_1,
+    t2.outcome AS outcome_timeline_2,
+    CASE 
+        WHEN t1.outcome != t2.outcome THEN 'DIVERGED'
+        ELSE 'SAME'
+    END AS divergence_status
+FROM timeline_actions t1
+JOIN timeline_actions t2 
+    ON t1.action = t2.action 
+    AND t1.timeline_id != t2.timeline_id
+WHERE t2.parent_timeline_id = t1.timeline_id
 ```
+
+**Why This Hybrid Approach is Superior**:
+
+1. **Single Source of Truth**: `game_events` (JSON) is the only authoritative source
+2. **No Dual-Write Problem**: App writes events once, two systems read independently
+3. **Gameplay Performance**: SQLite read models = fast combat/inventory queries (< 1ms)
+4. **Analytics Flexibility**: dbt can reprocess events anytime, change transformations
+5. **Schema Evolution**: dbt handles JSON parsing changes without app changes
+6. **ELT Pattern**: True Extract-Load-Transform (dbt's sweet spot)
+7. **Separation of Concerns**: Gameplay logic separate from analytics logic
+8. **Reprocessability**: Can rebuild analytics from scratch by re-running dbt
+9. **Timeline Comparisons**: dbt excels at complex cross-timeline analytics
+
+**Comparison**: App Read Models vs dbt Analytics
+
+| Aspect | SQLite Read Models (App) | DuckDB Analytics (dbt) |
+|--------|--------------------------|------------------------|
+| **Purpose** | Real-time gameplay queries | Historical analysis |
+| **Update** | Synchronous (same transaction) | Batch (scheduled dbt runs) |
+| **Latency** | < 1ms | Minutes (batch processing) |
+| **Use Case** | "What's player health?" | "How do choices differ across timelines?" |
+| **Query Type** | Simple lookups, JOINs | Aggregations, window functions, pivots |
+| **Rebuild** | Event replay (if corrupted) | `dbt run` (anytime) |
+| **Maintained By** | Python app code | SQL dbt models |
 
 **3. WAL Mode is Essential**
 - Enables concurrent reads during writes
@@ -254,11 +377,15 @@ GROUP BY player_id, timeline_id
 - **SQLite is the pragmatic choice** for single-player event sourcing
 - **WAL mode is non-negotiable** for performance
 - **CQRS Evolution Path**: Start with pure event sourcing (Phase 1), evolve to CQRS read models (Phase 2+)
-- **Events as Source of Truth**: Read models can always be rebuilt from events
+- **Hybrid CQRS Architecture**: Two parallel paths from events
+  - App maintains read models for real-time gameplay queries
+  - dbt transforms JSON events for batch analytics (independent of read models)
+- **Events as Single Source of Truth**: Both app and dbt read from `game_events` JSON
+- **No Dual-Write Problem**: App writes events once, read models + analytics derive from it
+- **dbt Parses JSON**: Analytics layer owns JSON transformation logic, not the app
 - **aggregate_id + aggregate_type** pattern enables entity-level event queries
 - **Proper indexing on timeline_id** is critical for replay performance
-- **dbt Integration**: CQRS read models provide structured data for analytics (vs. parsing JSON)
-- **Timeline Branching**: Read models make timeline comparison queries fast
+- **Timeline Branching**: Read models = fast gameplay, dbt = deep timeline analysis
 - **Migration to PostgreSQL** later is straightforward (event sourcing enables this)
 - **File-based database** simplifies development (no server to manage)
 
@@ -284,26 +411,41 @@ GROUP BY player_id, timeline_id
 8. Always include aggregate_id + aggregate_type for future CQRS
 9. Event handlers can derive current state by replaying events
 
-**Phase 2+ (CQRS Evolution)**:
-10. Create read model tables (player_state, inventory_state, etc.)
-11. Update read models synchronously in same transaction as event write
-12. Add last_event_id to all read models (rebuild capability)
-13. Implement rebuild_read_models() for recovery from events
-14. Use read models for queries, events for audit trail
-15. dbt models query read models (structured data, not JSON parsing)
-16. Timeline comparisons become simple JOINs on timeline_id
+**Phase 2+ (Hybrid CQRS Evolution)**:
+10. **App Side**: Create read model tables (player_state, inventory_state, etc.)
+11. **App Side**: Update read models synchronously in same transaction as event write
+12. **App Side**: Add last_event_id to all read models (rebuild capability)
+13. **App Side**: Implement rebuild_read_models() for recovery from events
+14. **App Side**: Use read models for gameplay queries, events for audit trail
+15. **dbt Side**: Create dbt models that parse game_events JSON independently
+16. **dbt Side**: dbt IGNORES read models, only reads game_events (JSON is source)
+17. **dbt Side**: dbt models handle all JSON parsing and transformation logic
+18. **dbt Side**: Timeline comparisons in dbt using complex analytics queries
 
 **CQRS Migration Path**:
-- Phase 1: Events only (keep it simple)
-- Phase 2: Add player_state + inventory_state (combat needs fast queries)
-- Phase 3: Add timeline_state + combat_state (timeline branching)
-- Phase 4: Optimize read models based on actual query patterns
+- **Phase 1**: Events only (keep it simple, no read models yet)
+- **Phase 2**: Add app read models (player_state, inventory_state) + dbt staging models
+- **Phase 3**: Add timeline_state + combat_state + dbt analytics models
+- **Phase 4**: Optimize based on query patterns, refine dbt transformations
 
-**Design Pattern**:
+**Hybrid Design Pattern**:
 ```
-Write Path:  Command → Event → game_events table → Update Read Models
-Read Path:   Query → Read Models directly (fast!)
-Rebuild:     game_events → Replay → Reconstruct Read Models
+Write Path:     Command → Event → game_events (JSON)
+                                      │
+                    ┌─────────────────┴────────────────┐
+                    │                                  │
+Read Path 1 (App):  │                                  │
+  Update Read Models (synchronous)                     │
+  Query → player_state, inventory_state (fast!)        │
+                                                       │
+Read Path 2 (dbt):                                     │
+  Extract game_events → DuckDB raw layer              │
+  Transform JSON → Staging → Intermediate → Analytics │
+  Query → Analytics tables (historical insights)      │
+                                                       │
+Rebuild:            │                                  │
+  App: game_events → Replay → Reconstruct Read Models │
+  dbt: game_events → `dbt run` → Rebuild Analytics ───┘
 ```
 
 **Code Example**:
