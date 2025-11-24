@@ -9,10 +9,9 @@ Event Schema Evolution:
 - Phase 2+: Typed event classes with validation
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, UTC
-from typing import Optional
 import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 
 @dataclass(frozen=True)
@@ -66,8 +65,8 @@ class GameEvent:
 
     # Event classification
     event_type: str = ""
-    aggregate_id: Optional[str] = None
-    aggregate_type: Optional[str] = None
+    aggregate_id: str | None = None
+    aggregate_type: str | None = None
 
     # Event payload (JSON)
     event_data: str = "{}"

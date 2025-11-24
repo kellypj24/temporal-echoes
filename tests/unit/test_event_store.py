@@ -16,19 +16,16 @@ Constitution Principles Validated:
 - #12: Transaction safety
 """
 
-import pytest
 import sqlite3
-from pathlib import Path
 
+import pytest
+
+from src.core.events import GameEvent
 from src.core.persistence import EventStore
-from src.core.events import GameEvent, EventTypes
 from tests.fixtures.event_fixtures import (
-    create_test_event,
-    create_player_moved_event,
-    create_state_transition_event,
     create_event_sequence,
+    create_test_event,
 )
-
 
 # Fixtures
 

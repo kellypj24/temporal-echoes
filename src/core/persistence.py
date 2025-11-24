@@ -13,11 +13,10 @@ Performance Targets:
 - Handle 60 events/second (worst case: 60 FPS with event per frame)
 """
 
-import sqlite3
-from pathlib import Path
-from typing import Optional, List
-from contextlib import contextmanager
 import logging
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
 
 from .events import GameEvent
 
@@ -61,7 +60,7 @@ class EventStore:
             sqlite3.Error: If database initialization fails
         """
         self.db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
         # Create database directory if needed (unless in-memory)
         if db_path != ":memory:":
@@ -212,8 +211,8 @@ class EventStore:
         logger.debug(f"Event appended: {event.event_id} ({event.event_type})")
 
     def get_events_by_timeline(
-        self, timeline_id: str, limit: Optional[int] = None
-    ) -> List[GameEvent]:
+        self, timeline_id: str, limit: int | None = None
+    ) -> list[GameEvent]:
         """
         Retrieve all events for a specific timeline, ordered chronologically.
 
@@ -258,8 +257,8 @@ class EventStore:
         return events
 
     def get_events_by_session(
-        self, session_id: str, limit: Optional[int] = None
-    ) -> List[GameEvent]:
+        self, session_id: str, limit: int | None = None
+    ) -> list[GameEvent]:
         """
         Retrieve all events for a game session (across all timelines).
 
@@ -300,7 +299,7 @@ class EventStore:
         logger.debug(f"Retrieved {len(events)} events for session: {session_id}")
         return events
 
-    def get_event_count(self, timeline_id: Optional[str] = None) -> int:
+    def get_event_count(self, timeline_id: str | None = None) -> int:
         """
         Get total event count (optionally filtered by timeline).
 
@@ -326,7 +325,7 @@ class EventStore:
         new_timeline_id: str,
         source_timeline_id: str,
         session_id: str,
-        branch_point_timestamp: Optional[float] = None,
+        branch_point_timestamp: float | None = None,
     ) -> int:
         """
         Create a new timeline by copying events from a source timeline.

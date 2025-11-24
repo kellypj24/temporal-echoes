@@ -3,7 +3,7 @@
 Provides factory functions and sample data for unit tests.
 """
 
-from src.core.events import GameEvent, EventTypes
+from src.core.events import EventTypes, GameEvent
 
 
 def create_test_event(
