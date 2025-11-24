@@ -10,11 +10,11 @@ This phase establishes the foundation of Temporal Echoes with event sourcing, st
 ## Research Summary
 
 **Total Topics**: 6  
-**Completed**: 3 (Topics 1, 5, 6)  
+**Completed**: 4 (Topics 1, 3, 5, 6)  
 **In Progress**: 0  
-**Remaining**: 3 (Topics 2, 3, 4)  
-**High Priority Remaining**: 3  
-**Research Time**: 2-4 hours remaining (estimated)  
+**Remaining**: 2 (Topics 2, 4)  
+**High Priority Remaining**: 2  
+**Research Time**: 2-3 hours remaining (estimated)  
 
 ---
 
@@ -552,26 +552,27 @@ The game loop must integrate Pygame's event system with our state machine and ma
 ---
 
 ### Topic 3: State Machine Pattern
-**Status**: 🔲 Not Started  
+**Status**: ✅ Complete  
 **Priority**: 🔴 High  
 **Assigned To**: @game-logic-worker  
+**Completed**: 2025-11-24
 
 **Why Research Needed**:
 State machine must be robust, testable, and emit events for sourcing. Need to validate transition logic and ensure it supports future timeline branching.
 
 **Questions to Answer**:
-1. What Python library best supports state machines (or roll our own)?
-2. How to structure state transitions for easy testing?
-3. How to emit events during transitions without tight coupling?
-4. Should states be classes or functions?
-5. How to handle nested/hierarchical states?
+1. ✅ What Python library best supports state machines (or roll our own)?
+2. ✅ How to structure state transitions for easy testing?
+3. ✅ How to emit events during transitions without tight coupling?
+4. ✅ Should states be classes or functions?
+5. ✅ How to handle nested/hierarchical states?
 
 **Research Sources**:
-- [ ] Python transitions library
-- [ ] State pattern in Design Patterns book
-- [ ] Game Programming Patterns - State chapter
-- [ ] Python enum best practices
-- [ ] Existing RPG state machine examples
+- [x] Python transitions library
+- [x] State pattern in Design Patterns book
+- [x] Game Programming Patterns - State chapter
+- [x] Python enum best practices
+- [x] Existing RPG state machine examples
 
 **Research Methodology**:
 - Evaluate transitions vs python-statemachine vs custom implementation
@@ -580,22 +581,356 @@ State machine must be robust, testable, and emit events for sourcing. Need to va
 - Consider dependency injection for state objects
 
 **Findings**:
-[To be filled]
+
+**1. Custom Implementation Selected (Per DEC-0002)**
+
+**Decision Already Made**: Custom state machine using Python enum + explicit transition validation.
+
+**Rationale** (from DEC-0002):
+- Educational value for learning project
+- Full control over implementation
+- Easy to understand and debug
+- No library overhead or magic
+- Simple enough for Phase 1 needs
+
+**2. State Machine Architecture**
+
+**States as Enum** (Not Classes):
+```python
+from enum import Enum, auto
+
+class GameState(Enum):
+    """All possible game states."""
+    MENU = auto()
+    EXPLORING = auto()
+    COMBAT = auto()
+    DIALOGUE = auto()
+    INVENTORY = auto()
+    TIMELINE_VIEW = auto()
+    PAUSED = auto()
+    GAME_OVER = auto()
+```
+
+**Why Enum over Classes**:
+- ✅ Type-safe (mypy can validate)
+- ✅ Lightweight (no instantiation needed)
+- ✅ Simple comparison (`state == GameState.MENU`)
+- ✅ Easy to serialize (for save/load)
+- ❌ No per-state behavior (not needed for Phase 1)
+
+**3. Transition Validation - Explicit Allow List**
+
+```python
+from typing import Dict, Set
+
+class GameStateMachine:
+    """State machine with explicit transition rules."""
+    
+    # Define ALL valid transitions upfront
+    ALLOWED_TRANSITIONS: Dict[GameState, Set[GameState]] = {
+        GameState.MENU: {
+            GameState.EXPLORING,      # Start new game
+            GameState.TIMELINE_VIEW,  # View timelines
+            GameState.GAME_OVER       # Quit
+        },
+        GameState.EXPLORING: {
+            GameState.COMBAT,         # Encounter enemy
+            GameState.DIALOGUE,       # Talk to NPC
+            GameState.INVENTORY,      # Open inventory
+            GameState.PAUSED,         # Pause game
+            GameState.MENU,           # Return to menu
+            GameState.TIMELINE_VIEW   # View timeline
+        },
+        GameState.COMBAT: {
+            GameState.EXPLORING,      # Win combat
+            GameState.GAME_OVER,      # Lose combat
+            GameState.PAUSED          # Pause during combat
+        },
+        GameState.DIALOGUE: {
+            GameState.EXPLORING,      # End dialogue
+            GameState.COMBAT,         # Dialogue triggers fight
+            GameState.TIMELINE_VIEW   # Dialogue about timelines
+        },
+        GameState.INVENTORY: {
+            GameState.EXPLORING,      # Close inventory
+            GameState.COMBAT          # Use item in combat
+        },
+        GameState.TIMELINE_VIEW: {
+            GameState.MENU,           # Return to menu
+            GameState.EXPLORING       # Branch timeline
+        },
+        GameState.PAUSED: {
+            GameState.EXPLORING,      # Resume from exploring
+            GameState.COMBAT,         # Resume from combat
+            GameState.MENU            # Quit to menu
+        },
+        GameState.GAME_OVER: {
+            GameState.MENU            # Restart
+        }
+    }
+    
+    def __init__(self, event_store: EventStore):
+        """Initialize with dependency injection."""
+        self._current_state = GameState.MENU
+        self._event_store = event_store
+        self._previous_state: Optional[GameState] = None
+    
+    @property
+    def current_state(self) -> GameState:
+        """Get current state (read-only)."""
+        return self._current_state
+    
+    def transition(self, to_state: GameState, context: Dict[str, Any]) -> None:
+        """
+        Transition to new state with validation.
+        
+        Args:
+            to_state: Target state to transition to
+            context: Additional context for the transition
+            
+        Raises:
+            StateTransitionError: If transition is invalid
+        """
+        # Validate transition is allowed
+        if not self._is_valid_transition(to_state):
+            raise StateTransitionError(
+                f"Invalid transition: {self._current_state.name} -> {to_state.name}"
+            )
+        
+        # Store previous state
+        from_state = self._current_state
+        self._previous_state = from_state
+        
+        # Emit event BEFORE changing state (for audit trail)
+        self._emit_transition_event(from_state, to_state, context)
+        
+        # Change state
+        self._current_state = to_state
+    
+    def _is_valid_transition(self, to_state: GameState) -> bool:
+        """Check if transition is allowed."""
+        allowed = self.ALLOWED_TRANSITIONS.get(self._current_state, set())
+        return to_state in allowed
+    
+    def _emit_transition_event(
+        self, 
+        from_state: GameState, 
+        to_state: GameState, 
+        context: Dict[str, Any]
+    ) -> None:
+        """Emit state transition event."""
+        event = GameEvent(
+            event_id=str(uuid.uuid4()),
+            event_timestamp=datetime.utcnow().timestamp(),
+            session_id=context.get('session_id', 'unknown'),
+            timeline_id=context.get('timeline_id', 'default'),
+            event_type='state_transition',
+            aggregate_id=context.get('player_id', 'player-1'),
+            aggregate_type='game_state',
+            event_data=json.dumps({
+                'from_state': from_state.name,
+                'to_state': to_state.name,
+                'reason': context.get('reason', 'user_action'),
+                'timestamp': datetime.utcnow().isoformat()
+            }),
+            metadata=json.dumps(context)
+        )
+        self._event_store.append_event(event)
+    
+    def can_transition_to(self, to_state: GameState) -> bool:
+        """Check if transition is valid (for UI enabling/disabling)."""
+        return self._is_valid_transition(to_state)
+    
+    def get_valid_transitions(self) -> Set[GameState]:
+        """Get all valid transitions from current state."""
+        return self.ALLOWED_TRANSITIONS.get(self._current_state, set())
+```
+
+**4. Event Emission Pattern**
+
+**Key Design Decision**: Emit events BEFORE state change (for accurate audit trail).
+
+```python
+# Event emitted BEFORE state changes
+self._emit_transition_event(from_state, to_state, context)
+self._current_state = to_state  # State changes after event
+```
+
+**Why This Order**:
+- ✅ Event shows accurate "from" and "to" states
+- ✅ If event write fails, state doesn't change (atomicity)
+- ✅ Event replay can reconstruct state history accurately
+
+**5. Dependency Injection for EventStore**
+
+```python
+# In main.py or game initialization
+event_store = EventStore("data/events.db")
+state_machine = GameStateMachine(event_store=event_store)
+
+# NOT like this (violates constitution principle #2):
+# state_machine = GameStateMachine()  # Creates EventStore internally ❌
+```
+
+**6. Testability Patterns**
+
+**A. Test Valid Transitions**:
+```python
+def test_valid_transition(state_machine):
+    """Test allowed state transition."""
+    state_machine.transition(GameState.EXPLORING, context={'player_id': 'p1'})
+    assert state_machine.current_state == GameState.EXPLORING
+```
+
+**B. Test Invalid Transitions**:
+```python
+def test_invalid_transition_raises_error(state_machine):
+    """Test disallowed transition raises error."""
+    with pytest.raises(StateTransitionError) as exc_info:
+        # Can't go directly from MENU to COMBAT
+        state_machine.transition(GameState.COMBAT, context={})
+    
+    assert "Invalid transition" in str(exc_info.value)
+    assert state_machine.current_state == GameState.MENU  # State unchanged
+```
+
+**C. Test Event Emission**:
+```python
+def test_transition_emits_event(state_machine, event_store_mock):
+    """Ensure event emitted on transition."""
+    state_machine.transition(GameState.EXPLORING, context={'player_id': 'p1'})
+    
+    # Verify EventStore.append_event was called
+    assert event_store_mock.append_event.called
+    
+    # Verify event contents
+    event = event_store_mock.append_event.call_args[0][0]
+    assert event.event_type == 'state_transition'
+    assert 'from_state' in json.loads(event.event_data)
+    assert 'to_state' in json.loads(event.event_data)
+```
+
+**D. Test with Mocked EventStore** (Fast Unit Tests):
+```python
+from unittest.mock import Mock
+
+@pytest.fixture
+def event_store_mock():
+    """Mock EventStore to avoid database in tests."""
+    return Mock(spec=EventStore)
+
+@pytest.fixture
+def state_machine(event_store_mock):
+    """State machine with mocked dependencies."""
+    return GameStateMachine(event_store=event_store_mock)
+```
+
+**7. Nested/Hierarchical States (Future Enhancement)**
+
+**Phase 1**: Flat state machine (simple, proven)
+
+**Phase 2+** (If Needed): Add sub-states:
+```python
+class CombatSubState(Enum):
+    PLAYER_TURN = auto()
+    ENEMY_TURN = auto()
+    CHOOSING_ACTION = auto()
+    ANIMATING = auto()
+
+class GameStateMachine:
+    def __init__(self, event_store: EventStore):
+        self._current_state = GameState.MENU
+        self._combat_sub_state: Optional[CombatSubState] = None
+```
+
+**When to Add Hierarchical States**:
+- Combat needs turn management (Phase 2)
+- Dialogue needs branching choices (Phase 2)
+- NOT needed for Phase 1 (premature complexity)
+
+**8. State Machine vs Command Pattern**
+
+**State Machine**: Manages WHAT state we're in  
+**Command Pattern**: Manages HOW actions are executed
+
+**They work together**:
+```python
+# Command triggers state transition
+class StartCombatCommand:
+    def execute(self, game_context: GameContext) -> None:
+        game_context.state_machine.transition(
+            GameState.COMBAT,
+            context={'reason': 'enemy_encounter', 'enemy_id': 'goblin-1'}
+        )
+```
 
 **Key Insights**:
-- [To be filled]
+- **Custom implementation is educational** and sufficient for Phase 1
+- **Enum for states** provides type safety and simplicity
+- **Explicit transition allow-list** makes valid paths self-documenting
+- **Event emission before state change** ensures accurate audit trail
+- **Dependency injection** for EventStore enables easy testing
+- **Mock EventStore in tests** keeps unit tests fast (no database)
+- **Flat state machine** is enough for Phase 1 (add hierarchy later if needed)
+- **State machine + Command pattern** work together (state vs behavior)
 
 **Decision**:
-[To be filled - document in decisions.md]
+**DECIDED**: Custom state machine with enum + explicit transition validation (documented as DEC-0002 in decisions.md)
+
+**Rationale**:
+- Learning project: custom implementation teaches fundamentals
+- Full control: no library abstraction to debug
+- Type-safe: Python enum + mypy validation
+- Testable: dependency injection + mocking
+- Simple: ~150 lines of code vs learning library API
+- Extensible: can add sub-states in Phase 2 if needed
 
 **Implementation Guidance**:
-[To be filled]
 
-**Confidence Level**: 🟢 High  
+**Step 2 Implementation Checklist**:
+1. Create `src/core/state_machine.py`
+2. Define `GameState` enum with all states
+3. Create `GameStateMachine` class with `ALLOWED_TRANSITIONS` dict
+4. Implement `transition()` method with validation
+5. Implement `_is_valid_transition()` helper
+6. Implement `_emit_transition_event()` for event sourcing
+7. Add `can_transition_to()` for UI logic
+8. Add `get_valid_transitions()` for debugging
+9. Create `StateTransitionError` in `src/core/exceptions.py`
+10. Write comprehensive unit tests (valid, invalid, event emission)
+
+**Code Organization**:
+```
+src/core/
+├── state_machine.py
+│   ├── GameState (enum)
+│   ├── GameStateMachine (class)
+│   └── ALLOWED_TRANSITIONS (dict)
+├── exceptions.py
+│   └── StateTransitionError (exception)
+tests/unit/
+└── test_state_machine.py
+    ├── test_valid_transitions
+    ├── test_invalid_transitions
+    ├── test_event_emission
+    └── test_transition_helpers
+```
+
+**Testing Strategy**:
+- **Unit tests**: Mock EventStore, test transition logic
+- **Integration tests**: Real EventStore, verify events persist
+- **Property-based tests** (optional): Use `hypothesis` to generate random transition sequences
+
+**Performance Targets**:
+- State transition: < 1ms (including event emission)
+- Transition validation: < 0.1ms (simple set lookup)
+
+**Confidence Level**: 🟢 High
 
 **References**:
 - [Game Programming Patterns - State](https://gameprogrammingpatterns.com/state.html)
-- [Python transitions library](https://github.com/pytransitions/transitions)
+- [Python Enum](https://docs.python.org/3/library/enum.html)
+- DEC-0002 in decisions.md
 
 ---
 
