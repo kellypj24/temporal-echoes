@@ -64,6 +64,32 @@ run-debug: ## Run the game in debug mode
 	@echo "$(BLUE)Starting Temporal Echoes (DEBUG)...$(NC)"
 	DEBUG=1 poetry run python -m src.main
 
+dbt-init: ## Initialize dbt project structure
+	@echo "$(BLUE)Initializing dbt structure...$(NC)"
+	@mkdir -p dbt/models/staging dbt/models/intermediate dbt/models/analytics
+	@mkdir -p dbt/tests dbt/macros
+	@touch dbt/models/staging/.gitkeep
+	@touch dbt/models/intermediate/.gitkeep
+	@touch dbt/models/analytics/.gitkeep
+	@touch dbt/tests/.gitkeep
+	@touch dbt/macros/.gitkeep
+	@if [ ! -f dbt/dbt_project.yml ]; then \
+		echo "Creating dbt_project.yml..."; \
+		echo "name: 'temporal_echoes_analytics'" > dbt/dbt_project.yml; \
+		echo "version: '1.0.0'" >> dbt/dbt_project.yml; \
+		echo "config-version: 2" >> dbt/dbt_project.yml; \
+	fi
+	@if [ ! -f dbt/profiles.yml ]; then \
+		echo "Creating profiles.yml..."; \
+		echo "temporal_echoes:" > dbt/profiles.yml; \
+		echo "  target: dev" >> dbt/profiles.yml; \
+		echo "  outputs:" >> dbt/profiles.yml; \
+		echo "    dev:" >> dbt/profiles.yml; \
+		echo "      type: duckdb" >> dbt/profiles.yml; \
+		echo "      path: ../data/analytics.duckdb" >> dbt/profiles.yml; \
+	fi
+	@echo "$(GREEN)✓ dbt structure initialized$(NC)"
+
 dbt-run: ## Run dbt models
 	@echo "$(BLUE)Running dbt models...$(NC)"
 	cd dbt && poetry run dbt run
@@ -85,7 +111,7 @@ dbt-full: ## Run dbt models and tests
 	cd dbt && poetry run dbt run && poetry run dbt test
 	@echo "$(GREEN)✓ dbt pipeline complete$(NC)"
 
-docker-build: ## Build Docker images
+docker-build: dbt-init ## Build Docker images
 	@echo "$(BLUE)Building Docker images...$(NC)"
 	docker compose build
 	@echo "$(GREEN)✓ Docker images built$(NC)"
@@ -143,7 +169,7 @@ check: lint test ## Run all checks (lint + test)
 ci: install lint test ## Run CI pipeline
 	@echo "$(GREEN)✓ CI pipeline complete$(NC)"
 
-dev-setup: install init-db docker-up ## Complete development setup
+dev-setup: dbt-init install init-db docker-up ## Complete development setup
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 	@echo ""
 	@echo "$(BLUE)Next steps:$(NC)"
