@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Ollama LLM service
   ollama:
@@ -48,9 +46,6 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     networks:
       - temporal-network
-    # Use host network mode for pygame display
-    # Comment out if not using display
-    network_mode: host
     restart: unless-stopped
     stdin_open: true
     tty: true
