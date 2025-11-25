@@ -9,6 +9,7 @@ This package contains the foundational architecture components:
 
 from .events import EventTypes, GameEvent
 from .exceptions import StateTransitionError, TemporalEchoesError
+from .game_context import GameContext
 from .persistence import EventStore
 from .state_machine import GameState, GameStateMachine
 
@@ -20,4 +21,5 @@ __all__ = [
     "TemporalEchoesError",
     "GameState",
     "GameStateMachine",
+    "GameContext",
 ]
