@@ -81,9 +81,13 @@ logs/
 # assets/sprites/*.png
 
 # Environment
+# Environment files (actual config with secrets)
 .env
 .env.local
 .env.*.local
+
+# Allow .env.example (template for developers)
+!.env.example
 
 # Docker
 .dockerignore
