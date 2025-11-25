@@ -16,6 +16,7 @@ Constitution Principles:
 """
 
 import logging
+import signal
 import time
 from collections.abc import Callable
 
@@ -101,6 +102,9 @@ class GameLoop:
         # State handlers (registered via register_state_handler)
         self._state_handlers: dict[GameState, Callable[[float], None]] = {}
 
+        # Shutdown handling
+        self._shutdown_requested = False
+
         logger.info(
             f"GameLoop initialized: target_fps={target_fps}, "
             f"fixed_dt={self.FIXED_TIMESTEP:.4f}s"
@@ -147,6 +151,32 @@ class GameLoop:
         else:
             logger.warning(f"No handler registered for state: {state.name}")
 
+    def setup_signal_handlers(self) -> None:
+        """
+        Setup signal handlers for graceful shutdown.
+
+        Registers handlers for SIGINT (Ctrl+C) and SIGTERM to allow
+        graceful shutdown when the process receives these signals.
+
+        Example:
+            >>> loop = GameLoop(context)
+            >>> loop.setup_signal_handlers()
+            >>> loop.run()  # Can be stopped with Ctrl+C
+        """
+
+        def signal_handler(signum: int, frame) -> None:  # type: ignore[no-untyped-def]
+            """Handle shutdown signals."""
+            signal_name = signal.Signals(signum).name
+            logger.info(f"Received {signal_name}, requesting shutdown...")
+            self._shutdown_requested = True
+            self.stop()
+
+        # Register signal handlers
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        logger.debug("Signal handlers registered (SIGINT, SIGTERM)")
+
     def run(self) -> None:
         """
         Run the main game loop.
@@ -177,9 +207,11 @@ class GameLoop:
         logger.info("GameLoop started")
 
         try:
-            while self.is_running:
+            while self.is_running and not self._shutdown_requested:
                 self._tick()
         finally:
+            if self._shutdown_requested:
+                logger.info("GameLoop shutting down gracefully...")
             logger.info(
                 f"GameLoop stopped: {self._frame_count} frames, "
                 f"{self._tick_count} ticks"
