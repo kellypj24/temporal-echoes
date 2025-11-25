@@ -8,6 +8,7 @@ This package contains the foundational architecture components:
 - Configuration
 """
 
+from .config import GameConfig
 from .events import EventTypes, GameEvent
 from .exceptions import StateTransitionError, TemporalEchoesError
 from .game_context import GameContext
@@ -25,4 +26,5 @@ __all__ = [
     "GameStateMachine",
     "GameContext",
     "GameLoop",
+    "GameConfig",
 ]
