@@ -22,7 +22,6 @@ from src.core.game_context import GameContext
 from src.core.game_loop import GameLoop
 from src.core.state_machine import GameState
 
-
 # ============================================================================
 # Fixtures
 # ============================================================================
