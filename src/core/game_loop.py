@@ -164,7 +164,7 @@ class GameLoop:
             >>> loop.run()  # Can be stopped with Ctrl+C
         """
 
-        def signal_handler(signum: int, frame) -> None:  # type: ignore[no-untyped-def]
+        def signal_handler(signum: int, _frame) -> None:  # type: ignore[no-untyped-def]
             """Handle shutdown signals."""
             signal_name = signal.Signals(signum).name
             logger.info(f"Received {signal_name}, requesting shutdown...")
