@@ -7,7 +7,6 @@ defining shared attributes and behavior for all combat participants.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Protocol
 
 from .damage_types import DamageType
 
