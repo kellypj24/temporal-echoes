@@ -121,10 +121,15 @@ class EventTypes:
     PLAYER_MOVED = "PlayerMoved"
     PLAYER_LEVEL_UP = "PlayerLevelUp"
 
-    # Combat events (Phase 2+)
+    # Combat events (Phase 2)
     COMBAT_STARTED = "CombatStarted"
     COMBAT_ENDED = "CombatEnded"
-    COMBAT_ACTION = "CombatAction"
+    TURN_STARTED = "TurnStarted"
+    ACTION_EXECUTED = "ActionExecuted"
+    SHIELD_BROKEN = "ShieldBroken"
+    BOOST_POINT_GAINED = "BoostPointGained"
+    COMBATANT_DEFEATED = "CombatantDefeated"
+    COMBAT_FLED = "CombatFled"
 
     # Timeline events (Phase 3+)
     TIMELINE_CREATED = "TimelineCreated"
