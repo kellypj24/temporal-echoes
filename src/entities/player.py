@@ -111,8 +111,8 @@ class Player(Combatant):
         return multipliers[amount]
 
     def take_damage(
-        self, damage: int, damage_type: DamageType
-    ) -> DamageResult:  # noqa: ARG002
+        self, damage: int, damage_type: DamageType  # noqa: ARG002
+    ) -> DamageResult:
         """
         Apply damage to player (simple damage application).
 
