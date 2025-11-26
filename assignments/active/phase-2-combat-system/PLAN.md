@@ -342,29 +342,39 @@ class DamageCalculator:
 
 ---
 
-### Step 3: Combat Event Integration
+### Step 3: Combat Event Integration ✅ COMPLETE
 **Supervisors**: `@architect-supervisor`, `@data-worker`  
 **Branch**: `feature/phase-2-step-3-events`  
-**Estimated Time**: 2-3 hours
+**Estimated Time**: 2-3 hours  
+**Actual Time**: ~2 hours  
+**Completed**: 2025-11-26
 
 **Description**:
 Extend Phase 1's event system with combat event types and builders per DEC-2003 and DEC-2004. No database migration needed - only Python code additions.
 
 **Tasks**:
-- [ ] Add combat event types to `src/core/events.py` EventTypes class
-- [ ] Create `src/core/combat_events.py` event builder module
-- [ ] Implement `CombatEventBuilder` class for creating combat events
-- [ ] Add Pydantic schemas for event validation (optional but recommended)
-- [ ] Write unit tests for event creation
-- [ ] Validate events can be stored/retrieved from Phase 1 EventStore
+- [x] Add combat event types to `src/core/events.py` EventTypes class
+- [x] Create `src/core/combat_events.py` event builder module
+- [x] Implement `CombatEventBuilder` class for creating combat events
+- [x] Add Pydantic schemas for event validation (optional - skipped, using JSON)
+- [x] Write unit tests for event creation
+- [x] Validate events can be stored/retrieved from Phase 1 EventStore
 
 **Success Criteria**:
-- [ ] Unit tests pass: `pytest tests/unit/test_combat_events.py -v`
-- [ ] Events store successfully in existing game_events table
-- [ ] Events retrieve correctly by aggregate_id (combat_id)
-- [ ] JSON payloads match research specifications
-- [ ] Code coverage >= 80%
-- [ ] No database migration required (validate with existing DB)
+- [x] Unit tests pass: `pytest tests/unit/test_combat_events.py -v` ✅ 26/26 passing
+- [x] Events store successfully in existing game_events table ✅
+- [x] Events retrieve correctly by aggregate_id (combat_id) ✅
+- [x] JSON payloads match research specifications ✅
+- [x] Code coverage >= 80% ✅ **100% on combat_events.py**
+- [x] No database migration required (validate with existing DB) ✅
+
+**Results**:
+- **Files Created/Modified**: 3 files (1 new + 1 modified + 1 test file)
+- **Tests**: 26 unit tests, all passing
+- **Coverage**: 100% on combat_events.py, 90% on events.py
+- **Event Types Added**: 6 new event types (8 total combat events)
+- **Lines of Code**: ~450 lines across implementation and tests
+- **Linting**: Zero errors
 
 **Files to Create/Modify**:
 - `src/core/events.py` - Add combat event type constants (~20 lines added)
