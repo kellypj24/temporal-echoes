@@ -12,14 +12,11 @@ Constitution Principles Tested:
 - #7: Configuration as code (DEC-0007)
 """
 
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from src.core.config import GameConfig
-
 
 # ============================================================================
 # Fixtures
