@@ -238,7 +238,9 @@ class TestDefendAction:
 
         events = store.get_events_by_timeline("timeline_main")
         action_events = [e for e in events if e.event_type == EventTypes.ACTION_EXECUTED]
-        defend_events = [e for e in action_events if json.loads(e.event_data)["action_type"] == "defend"]
+        defend_events = [
+            e for e in action_events if json.loads(e.event_data)["action_type"] == "defend"
+        ]
         assert len(defend_events) >= 1
 
 
@@ -320,7 +322,9 @@ class TestBreakSystem:
 
     def test_weakness_hit_reduces_shield(self) -> None:
         """Hitting an enemy's weakness reduces shield points."""
-        enemy = create_test_enemy(shield_points=3, max_shield_points=3, weaknesses=[DamageType.FIRE])
+        enemy = create_test_enemy(
+            shield_points=3, max_shield_points=3, weaknesses=[DamageType.FIRE]
+        )
 
         # Directly test take_damage with weakness type
         result = enemy.take_damage(10, DamageType.FIRE)
@@ -329,7 +333,9 @@ class TestBreakSystem:
 
     def test_shield_break_stuns_enemy(self) -> None:
         """Breaking enemy shield stuns them for 1 turn."""
-        enemy = create_test_enemy(shield_points=1, max_shield_points=3, weaknesses=[DamageType.FIRE])
+        enemy = create_test_enemy(
+            shield_points=1, max_shield_points=3, weaknesses=[DamageType.FIRE]
+        )
 
         enemy.take_damage(10, DamageType.FIRE)
         assert enemy.is_broken
@@ -353,7 +359,9 @@ class TestBreakSystem:
 
     def test_break_recovery_restores_shield(self) -> None:
         """Break recovery at turn end restores shield."""
-        enemy = create_test_enemy(shield_points=1, max_shield_points=3, weaknesses=[DamageType.FIRE])
+        enemy = create_test_enemy(
+            shield_points=1, max_shield_points=3, weaknesses=[DamageType.FIRE]
+        )
         enemy.take_damage(10, DamageType.FIRE)
         assert enemy.is_broken
 
@@ -525,9 +533,7 @@ class TestFullCombatSequence:
             create_test_enemy(id="e2", name="Goblin B", hp=50, max_hp=50, speed=25),
             create_test_enemy(id="e3", name="Goblin C", hp=50, max_hp=50, speed=35),
         ]
-        ctx = create_combat_context(
-            player=player, enemies=enemies, event_store=store, seed=42
-        )
+        ctx = create_combat_context(player=player, enemies=enemies, event_store=store, seed=42)
 
         max_rounds = 50
         for _ in range(max_rounds):
