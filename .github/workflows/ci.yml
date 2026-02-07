@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, "phase/*"]
+
+jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Ruff lint
+        run: poetry run ruff check src/ tests/
+
+      - name: Ruff format check
+        run: poetry run ruff format --check src/ tests/
+
+      - name: Mypy type check
+        run: poetry run mypy src/
+
+  test:
+    name: Targeted Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Determine tests to run
+        id: resolve-tests
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          RUN_FULL=false
+          TEST_FILES=""
+
+          while IFS= read -r file; do
+            case "$file" in
+              pyproject.toml|poetry.lock)
+                RUN_FULL=true
+                ;;
+              tests/**/*.py)
+                TEST_FILES="$TEST_FILES $file"
+                ;;
+              src/core/ai.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_ai.py"
+                ;;
+              src/core/damage.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_damage.py tests/unit/test_damage_properties.py"
+                ;;
+              src/core/events.py|src/core/persistence.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_event_store.py"
+                ;;
+              src/core/game_loop.py)
+                TEST_FILES="$TEST_FILES tests/integration/test_game_loop.py"
+                ;;
+              src/core/*.py)
+                name=$(basename "$file" .py)
+                TEST_FILES="$TEST_FILES tests/unit/test_${name}.py"
+                ;;
+              src/entities/*.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_entities.py"
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$RUN_FULL" = true ]; then
+            TEST_FILES="tests/"
+          else
+            # Deduplicate and filter to files that exist
+            TEST_FILES=$(echo "$TEST_FILES" | tr ' ' '\n' | sort -u | while read -r f; do
+              [ -n "$f" ] && [ -f "$f" ] && echo "$f"
+            done | tr '\n' ' ')
+          fi
+
+          echo "test_files=$TEST_FILES" >> "$GITHUB_OUTPUT"
+          if [ -z "$TEST_FILES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No matching test files — skipping tests."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will run: $TEST_FILES"
+          fi
+
+      - name: Run tests
+        if: steps.resolve-tests.outputs.skip != 'true'
+        run: |
+          poetry run pytest ${{ steps.resolve-tests.outputs.test_files }} \
+            -v --tb=short --cov=src --cov-report=term-missing
