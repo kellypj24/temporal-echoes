@@ -7,6 +7,19 @@
 
 **Stack**: Python 3.13, Pygame, SQLite (OLTP), DuckDB (OLAP), dbt, Ollama (Llama 3.2), Poetry, Docker
 
+## Current Status
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 1 | Core Game Loop | Done (161 tests, 100% coverage) |
+| 2 | Combat System | In progress — Step 1 complete (entities), Steps 2-6 remaining |
+| 3 | Timeline Mechanics | Planned |
+| 4 | AI Integration | Planned |
+| 5 | Polish & Content | Planned |
+
+**Active work**: `assignments/active/phase-2-combat-system/`
+**Completed reference**: `assignments/completed/phase-1-core-game-loop/`
+
 ## Constitution (Non-Negotiable Principles)
 
 ### Architecture
