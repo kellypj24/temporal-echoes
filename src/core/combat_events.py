@@ -8,6 +8,7 @@ and integrate with Phase 1's EventStore.
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from .events import EventTypes, GameEvent
 
@@ -58,7 +59,7 @@ class CombatEventBuilder:
         player: dict,
         enemies: list[dict],
         location: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> GameEvent:
         """
         Create CombatStarted event with all initial combatant data.
@@ -112,7 +113,7 @@ class CombatEventBuilder:
         total_turns: int,
         duration_ms: float | None = None,
         rewards: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> GameEvent:
         """
         Create CombatEnded event with combat outcome.
@@ -160,7 +161,7 @@ class CombatEventBuilder:
             event_data=json.dumps(event_data),
         )
 
-    def turn_started(self, turn_number: int, active_combatant_id: str, **kwargs) -> GameEvent:
+    def turn_started(self, turn_number: int, active_combatant_id: str, **kwargs: Any) -> GameEvent:
         """
         Create TurnStarted event.
 
@@ -206,7 +207,7 @@ class CombatEventBuilder:
         boost_points_spent: int | None = None,
         was_critical: bool = False,
         was_weakness: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> GameEvent:
         """
         Create ActionExecuted event (composite event with all action details).
@@ -282,7 +283,7 @@ class CombatEventBuilder:
         combatant_id: str,
         broke_by: str,
         damage_type: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> GameEvent:
         """
         Create ShieldBroken event.
@@ -325,7 +326,7 @@ class CombatEventBuilder:
         )
 
     def boost_point_gained(
-        self, turn_number: int, combatant_id: str, new_total: int, **kwargs
+        self, turn_number: int, combatant_id: str, new_total: int, **kwargs: Any
     ) -> GameEvent:
         """
         Create BoostPointGained event.
@@ -371,7 +372,7 @@ class CombatEventBuilder:
         combatant_id: str,
         defeated_by: str,
         final_damage: int,
-        **kwargs,
+        **kwargs: Any,
     ) -> GameEvent:
         """
         Create CombatantDefeated event.
@@ -414,7 +415,7 @@ class CombatEventBuilder:
         )
 
     def combat_fled(
-        self, turn_number: int, flee_success: bool, fled_by: str, **kwargs
+        self, turn_number: int, flee_success: bool, fled_by: str, **kwargs: Any
     ) -> GameEvent:
         """
         Create CombatFled event.
