@@ -9,7 +9,7 @@ import pytest
 
 from src.core.combat import CombatContext
 from src.core.persistence import EventStore
-from src.entities import DamageType, Enemy, Player
+from src.entities import Enemy, Player
 
 from .entity_fixtures import create_test_enemy, create_test_player
 

@@ -15,7 +15,6 @@ from src.core.events import EventTypes
 from src.core.persistence import EventStore
 from src.entities import DamageType, Enemy, Player
 from tests.fixtures.combat_fixtures import (
-    create_1v1_context,
     create_1v3_context,
     create_combat_context,
 )
@@ -37,7 +36,7 @@ class TestCombatInitialization:
     def test_combat_started_event_emitted(self) -> None:
         """COMBAT_STARTED event is emitted on initialization."""
         store = EventStore(":memory:")
-        ctx = create_combat_context(event_store=store)
+        create_combat_context(event_store=store)
         events = store.get_events_by_timeline("timeline_main")
         assert len(events) == 1
         assert events[0].event_type == EventTypes.COMBAT_STARTED
@@ -201,10 +200,7 @@ class TestAttackExecution:
             ctx.execute_enemy_turn(ctx.current_combatant)
             ctx.advance_turn()
 
-        # Attack without boost
-        action_no_boost = CombatAction(action_type="attack", target_id="enemy_1", boost_points=0)
-        # We need to test with a fresh context for comparison
-        # Instead just verify BP is spent and boost message appears
+        # Verify BP is spent and boost message appears
         action_boost = CombatAction(action_type="attack", target_id="enemy_1", boost_points=2)
         msgs = ctx.submit_player_action(action_boost)
         assert player.boost_points < 3  # BP was spent (1 gained at round start, 2 spent)
@@ -325,7 +321,6 @@ class TestBreakSystem:
     def test_weakness_hit_reduces_shield(self) -> None:
         """Hitting an enemy's weakness reduces shield points."""
         enemy = create_test_enemy(shield_points=3, max_shield_points=3, weaknesses=[DamageType.FIRE])
-        ctx = create_combat_context(enemies=[enemy])
 
         # Directly test take_damage with weakness type
         result = enemy.take_damage(10, DamageType.FIRE)
@@ -335,7 +330,6 @@ class TestBreakSystem:
     def test_shield_break_stuns_enemy(self) -> None:
         """Breaking enemy shield stuns them for 1 turn."""
         enemy = create_test_enemy(shield_points=1, max_shield_points=3, weaknesses=[DamageType.FIRE])
-        ctx = create_combat_context(enemies=[enemy])
 
         enemy.take_damage(10, DamageType.FIRE)
         assert enemy.is_broken
