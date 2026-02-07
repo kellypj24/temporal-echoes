@@ -55,9 +55,7 @@ class GameEvent:
 
     # Core identification
     event_id: str = field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:16]}")
-    event_timestamp: float = field(
-        default_factory=lambda: datetime.now(UTC).timestamp()
-    )
+    event_timestamp: float = field(default_factory=lambda: datetime.now(UTC).timestamp())
 
     # Session and timeline tracking
     session_id: str = ""

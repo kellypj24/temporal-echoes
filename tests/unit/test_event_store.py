@@ -107,9 +107,7 @@ def test_schema_initialization(in_memory_store):
     assert cursor.fetchone() is not None
 
     # Check indexes exist
-    cursor = in_memory_store._conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index'"
-    )
+    cursor = in_memory_store._conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
     indexes = [row[0] for row in cursor.fetchall()]
 
     assert "idx_timeline_id" in indexes
@@ -263,9 +261,7 @@ def test_get_events_by_session(in_memory_store):
     """Test retrieving all events for a session (across timelines)."""
     # Add events for session 1 across two timelines
     for _ in range(3):
-        in_memory_store.append_event(
-            create_test_event(session_id="sess_001", timeline_id="main")
-        )
+        in_memory_store.append_event(create_test_event(session_id="sess_001", timeline_id="main"))
 
     for _ in range(2):
         in_memory_store.append_event(

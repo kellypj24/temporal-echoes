@@ -100,9 +100,7 @@ class EnemyAI(ABC):
         if not isinstance(enemy, Enemy):
             raise TypeError(f"Expected Enemy instance, got {type(enemy).__name__}")
         if not isinstance(rng, random.Random):
-            raise TypeError(
-                f"Expected random.Random instance, got {type(rng).__name__}"
-            )
+            raise TypeError(f"Expected random.Random instance, got {type(rng).__name__}")
 
         self.enemy = enemy
         self.rng = rng
@@ -120,9 +118,7 @@ class EnemyAI(ABC):
         pass
 
     @abstractmethod
-    def _calculate_situational_weights(
-        self, combat_state: CombatState
-    ) -> dict[str, int]:
+    def _calculate_situational_weights(self, combat_state: CombatState) -> dict[str, int]:
         """
         Modify weights based on current combat situation.
 
@@ -154,9 +150,7 @@ class EnemyAI(ABC):
             TypeError: If combat_state is not a CombatState instance
         """
         if not isinstance(combat_state, CombatState):
-            raise TypeError(
-                f"Expected CombatState instance, got {type(combat_state).__name__}"
-            )
+            raise TypeError(f"Expected CombatState instance, got {type(combat_state).__name__}")
 
         weights = self._calculate_situational_weights(combat_state)
 
@@ -167,9 +161,7 @@ class EnemyAI(ABC):
         )[0]
 
         # Target player for attacks/abilities, self for defend
-        target_id = (
-            self.enemy.id if action_type == "defend" else combat_state.player.id
-        )
+        target_id = self.enemy.id if action_type == "defend" else combat_state.player.id
 
         return CombatAction(
             action_type=action_type,
@@ -193,7 +185,8 @@ class AggressiveAI(EnemyAI):
         return {"attack": 70, "defend": 10, "ability": 20}
 
     def _calculate_situational_weights(
-        self, combat_state: CombatState  # noqa: ARG002
+        self,
+        combat_state: CombatState,  # noqa: ARG002
     ) -> dict[str, int]:
         """
         Modify weights based on enemy HP.
@@ -231,7 +224,8 @@ class DefensiveAI(EnemyAI):
         return {"attack": 40, "defend": 40, "ability": 20}
 
     def _calculate_situational_weights(
-        self, combat_state: CombatState  # noqa: ARG002
+        self,
+        combat_state: CombatState,  # noqa: ARG002
     ) -> dict[str, int]:
         """
         Modify weights based on enemy HP.
@@ -268,9 +262,7 @@ class TacticalAI(EnemyAI):
         """Return tactical base weights (50/20/30)."""
         return {"attack": 50, "defend": 20, "ability": 30}
 
-    def _calculate_situational_weights(
-        self, combat_state: CombatState
-    ) -> dict[str, int]:
+    def _calculate_situational_weights(self, combat_state: CombatState) -> dict[str, int]:
         """
         Modify weights based on both player and enemy HP.
 
@@ -309,7 +301,8 @@ class BerserkerAI(EnemyAI):
         return {"attack": 60, "defend": 20, "ability": 20}
 
     def _calculate_situational_weights(
-        self, combat_state: CombatState  # noqa: ARG002
+        self,
+        combat_state: CombatState,  # noqa: ARG002
     ) -> dict[str, int]:
         """
         Modify weights based on enemy HP (rage mode).
@@ -331,9 +324,7 @@ class BerserkerAI(EnemyAI):
         return weights
 
 
-def create_enemy_ai(
-    enemy: Enemy, archetype: AIArchetype, rng: random.Random
-) -> EnemyAI:
+def create_enemy_ai(enemy: Enemy, archetype: AIArchetype, rng: random.Random) -> EnemyAI:
     """
     Factory function to create an AI instance based on archetype.
 

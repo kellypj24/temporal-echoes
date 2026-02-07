@@ -40,16 +40,12 @@ class TestCombatEventBuilderInitialization:
     def test_empty_session_id_raises_error(self):
         """Test empty session_id raises ValueError."""
         with pytest.raises(ValueError, match="session_id is required"):
-            CombatEventBuilder(
-                session_id="", timeline_id="main", combat_id="combat_001"
-            )
+            CombatEventBuilder(session_id="", timeline_id="main", combat_id="combat_001")
 
     def test_empty_timeline_id_raises_error(self):
         """Test empty timeline_id raises ValueError."""
         with pytest.raises(ValueError, match="timeline_id is required"):
-            CombatEventBuilder(
-                session_id="sess_001", timeline_id="", combat_id="combat_001"
-            )
+            CombatEventBuilder(session_id="sess_001", timeline_id="", combat_id="combat_001")
 
     def test_empty_combat_id_raises_error(self):
         """Test empty combat_id raises ValueError."""
@@ -358,9 +354,7 @@ class TestBoostPointGainedEvent:
             session_id="sess_001", timeline_id="main", combat_id="combat_001"
         )
 
-        event = builder.boost_point_gained(
-            turn_number=2, combatant_id="player_1", new_total=3
-        )
+        event = builder.boost_point_gained(turn_number=2, combatant_id="player_1", new_total=3)
 
         assert event.event_type == EventTypes.BOOST_POINT_GAINED
         assert event.aggregate_id == "combat_001"
@@ -429,9 +423,7 @@ class TestCombatFledEvent:
             session_id="sess_001", timeline_id="main", combat_id="combat_001"
         )
 
-        event = builder.combat_fled(
-            turn_number=5, flee_success=True, fled_by="player_1"
-        )
+        event = builder.combat_fled(turn_number=5, flee_success=True, fled_by="player_1")
 
         assert event.event_type == EventTypes.COMBAT_FLED
         assert event.aggregate_id == "combat_001"
@@ -566,12 +558,8 @@ class TestEventStoreIntegration:
 
             # Filter by combat_id (aggregate_id)
             # Note: EventStore doesn't have get_events_by_aggregate yet (Phase 1 limitation)
-            combat1_events = [
-                e for e in session_events if e.aggregate_id == "combat_001"
-            ]
-            combat2_events = [
-                e for e in session_events if e.aggregate_id == "combat_002"
-            ]
+            combat1_events = [e for e in session_events if e.aggregate_id == "combat_001"]
+            combat2_events = [e for e in session_events if e.aggregate_id == "combat_002"]
 
             assert len(combat1_events) == 2
             assert len(combat2_events) == 2
@@ -613,9 +601,7 @@ class TestEventSequences:
                 target_id="enemy_1",
                 damage_dealt=50,
             ),
-            builder.boost_point_gained(
-                turn_number=1, combatant_id="player_1", new_total=1
-            ),
+            builder.boost_point_gained(turn_number=1, combatant_id="player_1", new_total=1),
             builder.turn_started(turn_number=2, active_combatant_id="enemy_1"),
             builder.action_executed(
                 turn_number=2,

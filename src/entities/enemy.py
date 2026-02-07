@@ -49,14 +49,10 @@ class Enemy(Combatant):
         super().__post_init__()
 
         if self.shield_points < 0:
-            raise ValueError(
-                f"shield_points cannot be negative, got {self.shield_points}"
-            )
+            raise ValueError(f"shield_points cannot be negative, got {self.shield_points}")
 
         if self.max_shield_points <= 0:
-            raise ValueError(
-                f"max_shield_points must be positive, got {self.max_shield_points}"
-            )
+            raise ValueError(f"max_shield_points must be positive, got {self.max_shield_points}")
 
         if self.shield_points > self.max_shield_points:
             raise ValueError(
@@ -158,8 +154,6 @@ class Enemy(Combatant):
     def __str__(self) -> str:
         """Return human-readable enemy description with shield status."""
         shield_status = (
-            "BROKEN"
-            if self.is_broken
-            else f"{self.shield_points}/{self.max_shield_points} Shield"
+            "BROKEN" if self.is_broken else f"{self.shield_points}/{self.max_shield_points} Shield"
         )
         return f"{self.name} (Lv{self.level}): {self.hp}/{self.max_hp} HP | {shield_status}"

@@ -9,7 +9,6 @@ These tests verify invariants that should always hold true:
 - Determinism holds across all parameter combinations
 """
 
-
 from src.core.damage import DamageCalculator
 from src.entities import DamageType
 
@@ -35,18 +34,14 @@ class TestDamageProperties:
 
         for params in test_cases:
             result = calc.calculate(**params, crit_chance=0)
-            assert (
-                1 <= result.damage <= 9999
-            ), f"Damage {result.damage} out of range for {params}"
+            assert 1 <= result.damage <= 9999, f"Damage {result.damage} out of range for {params}"
 
     def test_damage_never_negative(self):
         """Test damage is never negative even with extreme parameters."""
         calc = DamageCalculator(rng_seed=42)
 
         # Very weak attack vs very high defense
-        result = calc.calculate(
-            attacker_atk=1, defender_def=9999, skill_power=1, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=1, defender_def=9999, skill_power=1, crit_chance=0)
 
         assert result.damage >= 1
 
@@ -71,9 +66,7 @@ class TestDamageProperties:
 
         for def_val in defense_values:
             calc = DamageCalculator(rng_seed=42)  # Same seed for each
-            result = calc.calculate(
-                attacker_atk=50, defender_def=def_val, crit_chance=0
-            )
+            result = calc.calculate(attacker_atk=50, defender_def=def_val, crit_chance=0)
 
             assert (
                 result.damage <= previous_damage
@@ -91,9 +84,7 @@ class TestDamageProperties:
                 attacker_atk=50, defender_def=30, boost_points=boost, crit_chance=0
             )
 
-            assert (
-                result.damage >= previous_damage
-            ), f"Damage decreased with boost {boost}"
+            assert result.damage >= previous_damage, f"Damage decreased with boost {boost}"
             previous_damage = result.damage
 
     def test_weakness_always_increases_damage(self):
@@ -143,11 +134,15 @@ class TestDamageProperties:
         calc2 = DamageCalculator(rng_seed=42)
 
         result_normal = calc1.calculate(
-            attacker_atk=50, defender_def=30, crit_chance=0  # No crits
+            attacker_atk=50,
+            defender_def=30,
+            crit_chance=0,  # No crits
         )
 
         result_crit = calc2.calculate(
-            attacker_atk=50, defender_def=30, crit_chance=100  # Guaranteed crit
+            attacker_atk=50,
+            defender_def=30,
+            crit_chance=100,  # Guaranteed crit
         )
 
         assert result_crit.damage >= result_normal.damage
@@ -245,9 +240,7 @@ class TestDamageProperties:
 
         for atk in [1, 10, 50, 100, 500]:
             for def_val in [1, 10, 50, 100, 500]:
-                expected = calc.calculate_expected_damage(
-                    attacker_atk=atk, defender_def=def_val
-                )
+                expected = calc.calculate_expected_damage(attacker_atk=atk, defender_def=def_val)
                 assert (
                     1 <= expected <= 9999
                 ), f"Expected {expected} out of range (ATK={atk}, DEF={def_val})"

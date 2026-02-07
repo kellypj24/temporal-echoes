@@ -449,4 +449,3 @@ def test_config_full_workflow(temp_config_dir: Path) -> None:
     # 6. String representations
     assert "Integration Test" in str(config)
     assert "GameConfig" in repr(config)
-

@@ -143,9 +143,7 @@ class DamageCalculator:
         base_damage = (attacker_atk * skill_power) / (safe_def * 0.5 + 10)
 
         # Step 2: Apply random variance (85-100%)
-        random_factor = self.rng.uniform(
-            self.RANDOM_VARIANCE_MIN, self.RANDOM_VARIANCE_MAX
-        )
+        random_factor = self.rng.uniform(self.RANDOM_VARIANCE_MIN, self.RANDOM_VARIANCE_MAX)
         damage = base_damage * random_factor
 
         # Step 3: Apply boost multiplier

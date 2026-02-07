@@ -160,9 +160,7 @@ class CombatEventBuilder:
             event_data=json.dumps(event_data),
         )
 
-    def turn_started(
-        self, turn_number: int, active_combatant_id: str, **kwargs
-    ) -> GameEvent:
+    def turn_started(self, turn_number: int, active_combatant_id: str, **kwargs) -> GameEvent:
         """
         Create TurnStarted event.
 

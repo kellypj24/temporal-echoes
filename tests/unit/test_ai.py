@@ -699,9 +699,7 @@ class TestArchetypeBehavior:
             enemy = _create_enemy(**low_hp_enemy_args)
             rng = random.Random(rng_seed)
             ai = cls(enemy, rng)
-            attacks = sum(
-                1 for _ in range(1000) if ai.select_action(state).action_type == "attack"
-            )
+            attacks = sum(1 for _ in range(1000) if ai.select_action(state).action_type == "attack")
             attack_counts[name] = attacks
 
         # Berserker should attack most at low HP

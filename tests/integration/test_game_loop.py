@@ -280,9 +280,7 @@ def test_events_recorded_during_loop(game_context: GameContext) -> None:
     # Verify event types (EventTypes.STATE_TRANSITION = "StateTransition")
     from src.core.events import EventTypes
 
-    state_transitions = [
-        e for e in events if e.event_type == EventTypes.STATE_TRANSITION
-    ]
+    state_transitions = [e for e in events if e.event_type == EventTypes.STATE_TRANSITION]
     assert len(state_transitions) == 2
 
 

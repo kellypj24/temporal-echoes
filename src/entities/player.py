@@ -36,9 +36,7 @@ class Player(Combatant):
         super().__post_init__()
 
         if self.boost_points < 0:
-            raise ValueError(
-                f"boost_points cannot be negative, got {self.boost_points}"
-            )
+            raise ValueError(f"boost_points cannot be negative, got {self.boost_points}")
 
         if self.boost_points > self.max_boost_points:
             raise ValueError(
@@ -47,9 +45,7 @@ class Player(Combatant):
             )
 
         if self.max_boost_points <= 0:
-            raise ValueError(
-                f"max_boost_points must be positive, got {self.max_boost_points}"
-            )
+            raise ValueError(f"max_boost_points must be positive, got {self.max_boost_points}")
 
     def gain_bp(self, amount: int = 1) -> int:
         """
@@ -111,7 +107,9 @@ class Player(Combatant):
         return multipliers[amount]
 
     def take_damage(
-        self, damage: int, damage_type: DamageType  # noqa: ARG002
+        self,
+        damage: int,
+        damage_type: DamageType,  # noqa: ARG002
     ) -> DamageResult:
         """
         Apply damage to player (simple damage application).

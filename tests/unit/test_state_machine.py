@@ -156,9 +156,7 @@ def test_transition_menu_to_exploring(state_machine: GameStateMachine) -> None:
     assert state_machine.current_state == GameState.EXPLORING
 
 
-def test_transition_emits_event(
-    state_machine: GameStateMachine, event_store: EventStore
-) -> None:
+def test_transition_emits_event(state_machine: GameStateMachine, event_store: EventStore) -> None:
     """Test that transitions emit events to the event store."""
     initial_count = event_store.get_event_count()
 
@@ -583,9 +581,7 @@ def test_menu_is_reachable_from_all_states() -> None:
 
     for state in states_with_menu_access:
         transitions = GameStateMachine.ALLOWED_TRANSITIONS[state]
-        assert (
-            GameState.MENU in transitions
-        ), f"{state.name} should allow transition to MENU"
+        assert GameState.MENU in transitions, f"{state.name} should allow transition to MENU"
 
 
 def test_game_over_is_reachable() -> None:
@@ -606,9 +602,7 @@ def test_game_over_is_reachable() -> None:
 
 def test_exploring_is_central_hub() -> None:
     """Test that EXPLORING state has the most transitions (hub state)."""
-    exploring_transitions = len(
-        GameStateMachine.ALLOWED_TRANSITIONS[GameState.EXPLORING]
-    )
+    exploring_transitions = len(GameStateMachine.ALLOWED_TRANSITIONS[GameState.EXPLORING])
 
     for state, transitions in GameStateMachine.ALLOWED_TRANSITIONS.items():
         if state != GameState.EXPLORING:

@@ -191,9 +191,7 @@ class TestBoostMultiplier:
         """Test 0 BP = 1.0x damage."""
         calc = DamageCalculator(rng_seed=42)
 
-        result = calc.calculate(
-            attacker_atk=50, defender_def=30, boost_points=0, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=50, defender_def=30, boost_points=0, crit_chance=0)
 
         assert result.multipliers["boost"] == 1.0
 
@@ -201,9 +199,7 @@ class TestBoostMultiplier:
         """Test 1 BP = 1.5x damage."""
         calc = DamageCalculator(rng_seed=42)
 
-        result = calc.calculate(
-            attacker_atk=50, defender_def=30, boost_points=1, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=50, defender_def=30, boost_points=1, crit_chance=0)
 
         assert result.multipliers["boost"] == 1.5
 
@@ -211,9 +207,7 @@ class TestBoostMultiplier:
         """Test 2 BP = 2.0x damage."""
         calc = DamageCalculator(rng_seed=42)
 
-        result = calc.calculate(
-            attacker_atk=50, defender_def=30, boost_points=2, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=50, defender_def=30, boost_points=2, crit_chance=0)
 
         assert result.multipliers["boost"] == 2.0
 
@@ -221,9 +215,7 @@ class TestBoostMultiplier:
         """Test 3 BP = 2.5x damage."""
         calc = DamageCalculator(rng_seed=42)
 
-        result = calc.calculate(
-            attacker_atk=50, defender_def=30, boost_points=3, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=50, defender_def=30, boost_points=3, crit_chance=0)
 
         assert result.multipliers["boost"] == 2.5
 
@@ -356,7 +348,9 @@ class TestCriticalHits:
         calc = DamageCalculator(rng_seed=42)
 
         result = calc.calculate(
-            attacker_atk=50, defender_def=30, crit_chance=100  # Force crit
+            attacker_atk=50,
+            defender_def=30,
+            crit_chance=100,  # Force crit
         )
 
         assert result.multipliers["critical"] == 1.5
@@ -366,7 +360,9 @@ class TestCriticalHits:
         calc = DamageCalculator(rng_seed=42)
 
         result = calc.calculate(
-            attacker_atk=50, defender_def=30, crit_chance=0  # No crits
+            attacker_atk=50,
+            defender_def=30,
+            crit_chance=0,  # No crits
         )
 
         assert result.multipliers["critical"] == 1.0
@@ -484,9 +480,7 @@ class TestDamageClamping:
         calc = DamageCalculator(rng_seed=42)
 
         # Very weak attack
-        result = calc.calculate(
-            attacker_atk=1, defender_def=100, skill_power=1, crit_chance=0
-        )
+        result = calc.calculate(attacker_atk=1, defender_def=100, skill_power=1, crit_chance=0)
 
         assert result.damage >= 1
 
@@ -555,12 +549,10 @@ class TestDeterminism:
         calc2 = DamageCalculator(rng_seed=42)
 
         results1 = [
-            calc1.calculate(attacker_atk=50, defender_def=30, crit_chance=5)
-            for _ in range(10)
+            calc1.calculate(attacker_atk=50, defender_def=30, crit_chance=5) for _ in range(10)
         ]
         results2 = [
-            calc2.calculate(attacker_atk=50, defender_def=30, crit_chance=5)
-            for _ in range(10)
+            calc2.calculate(attacker_atk=50, defender_def=30, crit_chance=5) for _ in range(10)
         ]
 
         for r1, r2 in zip(results1, results2, strict=False):
