@@ -110,9 +110,7 @@ class GameLoop:
             f"fixed_dt={self.FIXED_TIMESTEP:.4f}s"
         )
 
-    def register_state_handler(
-        self, state: GameState, handler: Callable[[float], None]
-    ) -> None:
+    def register_state_handler(self, state: GameState, handler: Callable[[float], None]) -> None:
         """
         Register an update handler for a specific game state.
 
@@ -213,8 +211,7 @@ class GameLoop:
             if self._shutdown_requested:
                 logger.info("GameLoop shutting down gracefully...")
             logger.info(
-                f"GameLoop stopped: {self._frame_count} frames, "
-                f"{self._tick_count} ticks"
+                f"GameLoop stopped: {self._frame_count} frames, " f"{self._tick_count} ticks"
             )
 
     def _tick(self) -> None:

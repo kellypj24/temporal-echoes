@@ -214,9 +214,7 @@ class EventStore:
 
         logger.debug(f"Event appended: {event.event_id} ({event.event_type})")
 
-    def get_events_by_timeline(
-        self, timeline_id: str, limit: int | None = None
-    ) -> list[GameEvent]:
+    def get_events_by_timeline(self, timeline_id: str, limit: int | None = None) -> list[GameEvent]:
         """
         Retrieve all events for a specific timeline, ordered chronologically.
 
@@ -261,9 +259,7 @@ class EventStore:
         logger.debug(f"Retrieved {len(events)} events for timeline: {timeline_id}")
         return events
 
-    def get_events_by_session(
-        self, session_id: str, limit: int | None = None
-    ) -> list[GameEvent]:
+    def get_events_by_session(self, session_id: str, limit: int | None = None) -> list[GameEvent]:
         """
         Retrieve all events for a game session (across all timelines).
 

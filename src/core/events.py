@@ -55,9 +55,7 @@ class GameEvent:
 
     # Core identification
     event_id: str = field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:16]}")
-    event_timestamp: float = field(
-        default_factory=lambda: datetime.now(UTC).timestamp()
-    )
+    event_timestamp: float = field(default_factory=lambda: datetime.now(UTC).timestamp())
 
     # Session and timeline tracking
     session_id: str = ""
@@ -121,10 +119,15 @@ class EventTypes:
     PLAYER_MOVED = "PlayerMoved"
     PLAYER_LEVEL_UP = "PlayerLevelUp"
 
-    # Combat events (Phase 2+)
+    # Combat events (Phase 2)
     COMBAT_STARTED = "CombatStarted"
     COMBAT_ENDED = "CombatEnded"
-    COMBAT_ACTION = "CombatAction"
+    TURN_STARTED = "TurnStarted"
+    ACTION_EXECUTED = "ActionExecuted"
+    SHIELD_BROKEN = "ShieldBroken"
+    BOOST_POINT_GAINED = "BoostPointGained"
+    COMBATANT_DEFEATED = "CombatantDefeated"
+    COMBAT_FLED = "CombatFled"
 
     # Timeline events (Phase 3+)
     TIMELINE_CREATED = "TimelineCreated"

@@ -205,9 +205,7 @@ def test_transition_to_with_context(game_context: GameContext) -> None:
 
     # Verify event was emitted with context
     events = game_context.get_session_events()
-    transition_events = [
-        e for e in events if e.event_type == EventTypes.STATE_TRANSITION
-    ]
+    transition_events = [e for e in events if e.event_type == EventTypes.STATE_TRANSITION]
     assert len(transition_events) > 0
 
     # Verify context data in event

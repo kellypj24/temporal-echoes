@@ -12,14 +12,11 @@ Constitution Principles Tested:
 - #7: Configuration as code (DEC-0007)
 """
 
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from src.core.config import GameConfig
-
 
 # ============================================================================
 # Fixtures
@@ -452,4 +449,3 @@ def test_config_full_workflow(temp_config_dir: Path) -> None:
     # 6. String representations
     assert "Integration Test" in str(config)
     assert "GameConfig" in repr(config)
-
