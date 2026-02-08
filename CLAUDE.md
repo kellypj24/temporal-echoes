@@ -12,7 +12,7 @@
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Core Game Loop | Done (161 tests, 100% coverage) |
-| 2 | Combat System | In progress — Steps 1-4 complete, Steps 5-6 remaining |
+| 2 | Combat System | Done (403 tests, 90.22% coverage) — pending final PR |
 | 3 | Timeline Mechanics | Planned |
 | 4 | AI Integration | Planned |
 | 5 | Polish & Content | Planned |
