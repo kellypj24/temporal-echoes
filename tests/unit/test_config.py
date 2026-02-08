@@ -24,8 +24,8 @@ from src.core.config import GameConfig
 
 
 @pytest.fixture
-def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clean environment variables before each test."""
+def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Clean environment variables and prevent .env file loading."""
     # Remove any config-related env vars
     config_vars = [
         "GAME_TITLE",
@@ -45,6 +45,9 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for var in config_vars:
         monkeypatch.delenv(var, raising=False)
+
+    # Change to temp dir so pydantic-settings won't find the project .env file
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture
