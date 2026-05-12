@@ -89,6 +89,18 @@ jobs:
               src/entities/*.py)
                 TEST_FILES="$TEST_FILES tests/unit/test_entities.py"
                 ;;
+              src/ai/providers/base.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_base.py tests/unit/test_provider_ollama.py tests/unit/test_provider_anthropic.py"
+                ;;
+              src/ai/providers/ollama.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_ollama.py"
+                ;;
+              src/ai/providers/anthropic.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_anthropic.py"
+                ;;
+              src/ai/providers/*.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_base.py"
+                ;;
             esac
           done <<< "$CHANGED"
 
