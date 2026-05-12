@@ -28,8 +28,8 @@ ENV/
 env/
 .venv
 
-# Poetry
-poetry.lock
+# uv (lockfile is committed; venv is not)
+.venv/
 
 # IDEs
 .vscode/

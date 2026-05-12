@@ -106,8 +106,7 @@ class GameLoop:
         self._shutdown_requested = False
 
         logger.info(
-            f"GameLoop initialized: target_fps={target_fps}, "
-            f"fixed_dt={self.FIXED_TIMESTEP:.4f}s"
+            f"GameLoop initialized: target_fps={target_fps}, fixed_dt={self.FIXED_TIMESTEP:.4f}s"
         )
 
     def register_state_handler(self, state: GameState, handler: Callable[[float], None]) -> None:
@@ -210,9 +209,7 @@ class GameLoop:
         finally:
             if self._shutdown_requested:
                 logger.info("GameLoop shutting down gracefully...")
-            logger.info(
-                f"GameLoop stopped: {self._frame_count} frames, " f"{self._tick_count} ticks"
-            )
+            logger.info(f"GameLoop stopped: {self._frame_count} frames, {self._tick_count} ticks")
 
     def _tick(self) -> None:
         """
@@ -307,8 +304,7 @@ class GameLoop:
             tps = self._tick_count / elapsed_since_report
 
             logger.info(
-                f"Performance: FPS={fps:.2f}, TPS={tps:.2f}, "
-                f"accumulator={self._accumulator:.4f}s"
+                f"Performance: FPS={fps:.2f}, TPS={tps:.2f}, accumulator={self._accumulator:.4f}s"
             )
 
             # Reset counters
@@ -356,10 +352,7 @@ class GameLoop:
     def __repr__(self) -> str:
         """Developer-friendly string representation."""
         return (
-            f"GameLoop("
-            f"fps={self.target_fps}, "
-            f"running={self.is_running}, "
-            f"ticks={self._tick_count})"
+            f"GameLoop(fps={self.target_fps}, running={self.is_running}, ticks={self._tick_count})"
         )
 
     def __str__(self) -> str:
