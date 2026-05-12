@@ -24,27 +24,27 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install --no-cache-dir poetry==1.8.0
+# Install uv from the official static binary image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Configure Poetry
-# - Don't create virtual env (already in container)
-# - Don't ask interactive questions
-ENV POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VERSION=1.8.0
+# Sync dependencies into the system Python (no separate venv inside the container)
+ENV UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
 
-# Copy dependency files
-COPY pyproject.toml poetry.lock ./
+# Copy dependency files first for layer caching
+COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies
-RUN poetry install --no-dev --no-root
+# Install runtime dependencies only (skip dev group, skip project itself for now)
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application code
 COPY src/ ./src/
 COPY dbt/ ./dbt/
 COPY assets/ ./assets/
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
 
 # Ensure data directory exists
 RUN mkdir -p /app/data
@@ -58,4 +58,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Default command
 CMD ["python", "-m", "src.main"]
-

@@ -3,7 +3,7 @@
 > A 16-bit tribute RPG with an AI Dungeon Master - A time-travel adventure powered by Python, Pygame, and local LLMs
 
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![Poetry](https://img.shields.io/badge/poetry-1.8.0-blue.svg)](https://python-poetry.org/)
+[![uv](https://img.shields.io/badge/uv-managed-261230.svg)](https://github.com/astral-sh/uv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## 🎮 Overview
@@ -86,8 +86,9 @@ temporal-echoes/
 │   ├── Dockerfile.game
 │   ├── Dockerfile.ollama
 │   └── scripts/
-├── Makefile            # Task automation
-├── pyproject.toml      # Poetry configuration
+├── justfile            # Task automation
+├── pyproject.toml      # PEP 621 project metadata + tooling config
+├── uv.lock             # Reproducible dependency lockfile
 └── docker-compose.yml  # Container orchestration
 ```
 
@@ -96,7 +97,8 @@ temporal-echoes/
 ### Prerequisites
 
 - **Python 3.13+**
-- **Poetry** (for dependency management)
+- **[uv](https://github.com/astral-sh/uv)** (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- **[just](https://github.com/casey/just)** (`brew install just`)
 - **Docker & Docker Compose** (for Ollama LLM)
 - **Git**
 
@@ -108,21 +110,11 @@ temporal-echoes/
    cd temporal-echoes
    ```
 
-2. **Complete development setup** (installs dependencies, initializes DB, starts Docker)
+2. **Install dependencies, start Ollama, initialize DBs**
    ```bash
-   make dev-setup
-   ```
-
-   Or manually:
-   ```bash
-   # Install dependencies
-   make install
-
-   # Start Ollama container
-   make docker-up
-
-   # Initialize databases
-   make init-db
+   just install      # uv sync
+   just docker-up    # start Ollama container
+   just init-db      # create SQLite + DuckDB databases
    ```
 
 3. **Pull LLM model** (Llama 3.2)
@@ -132,67 +124,64 @@ temporal-echoes/
 
 4. **Run the game**
    ```bash
-   make run
+   just run
    ```
 
 ## 📋 Development Commands
 
 | Command | Description |
 |---------|-------------|
-| `make help` | Show all available commands |
-| `make install` | Install dependencies with Poetry |
-| `make test` | Run test suite with coverage |
-| `make lint` | Run linting and type checking |
-| `make format` | Format code with ruff |
-| `make run` | Start the game |
-| `make dbt-run` | Run dbt analytics models |
-| `make docker-up` | Start Docker containers |
-| `make docker-down` | Stop Docker containers |
-| `make clean` | Clean up generated files |
+| `just` | Show all available recipes |
+| `just install` | Install dependencies (`uv sync`) |
+| `just test` | Run test suite with coverage |
+| `just lint` | Run ruff lint + format check + mypy (matches CI scope) |
+| `just fmt` | Auto-fix ruff lint + format |
+| `just run` | Start the game |
+| `just dbt-run` | Run dbt analytics models |
+| `just docker-up` | Start Docker containers |
+| `just docker-down` | Stop Docker containers |
+| `just clean` | Clean up generated files |
 
 ### Testing
 
 ```bash
 # Run all tests with coverage
-make test
+just test
 
 # Run only unit tests
-make test-unit
+just test-unit
 
 # Run only integration tests
-make test-integration
+just test-integration
 
-# Run specific test file
-poetry run pytest tests/unit/test_state_machine.py -v
+# Run a specific test file
+uv run pytest tests/unit/test_state_machine.py -v
 ```
 
 ### Linting & Type Checking
 
 ```bash
-# Run all linters
-make lint
+# Run all linters (mirrors CI exactly)
+just lint
 
-# Auto-fix linting issues
-make lint-fix
-
-# Format code
-make format
+# Auto-fix lint + format
+just fmt
 ```
 
 ### dbt Analytics
 
 ```bash
 # Run all dbt models
-make dbt-run
+just dbt-run
 
 # Run dbt tests
-make dbt-test
+just dbt-test
 
 # Generate and serve documentation
-make dbt-docs
+just dbt-docs
 
 # Full pipeline (run + test)
-make dbt-full
+just dbt-full
 ```
 
 ## 🤖 Cursor MDC Agent Rules & Spec-Driven Development
@@ -317,8 +306,8 @@ Read `.cursor/rules/CONSTITUTION.md` for the **15 immutable principles** that go
 | **OLAP Database** | DuckDB | Analytics, aggregations |
 | **Analytics** | dbt-duckdb | Data transformations |
 | **AI/LLM** | Ollama + Llama 3.2 | Local AI Dungeon Master |
-| **Package Manager** | Poetry | Dependency management |
-| **Task Runner** | Makefile | Development workflows |
+| **Package Manager** | uv | Dependency management |
+| **Task Runner** | just | Development workflows |
 | **Containers** | Docker Compose | Service orchestration |
 | **Linting** | Ruff | Fast Python linter |
 | **Type Checking** | MyPy | Static type checking |
@@ -412,7 +401,7 @@ This is a personal learning project, but contributions are welcome! Please:
 6. Follow code quality standards:
    - Type hints on all functions
    - >= 80% test coverage
-   - `make lint` passes
+   - `just lint` passes
 7. Submit a pull request with:
    - Constitution compliance verification
    - Decision records (if applicable)

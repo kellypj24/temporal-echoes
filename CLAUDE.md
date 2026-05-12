@@ -5,7 +5,7 @@
 
 **Developer Context**: Intermediate Python, advanced SQL/dbt, learning game dev & AI agents.
 
-**Stack**: Python 3.13, Pygame, SQLite (OLTP), DuckDB (OLAP), dbt, Ollama (Llama 3.2), Poetry, Docker
+**Stack**: Python 3.13, Pygame, SQLite (OLTP), DuckDB (OLAP), dbt, Ollama (Llama 3.2), uv, just, Docker
 
 ## Current Status
 
@@ -84,8 +84,8 @@ assignments/
 **NO implementation until research and decisions are complete.**
 
 ## Tooling
-- **Package Management**: Poetry (`poetry add <package>`)
-- **Task Runner**: Makefile (`make test`, `make lint`, `make run`)
+- **Package Management**: uv (`uv add <package>`)
+- **Task Runner**: just (`just test`, `just lint`, `just run`, `just --list`)
 - **Containers**: Docker Compose (game + Ollama containers)
 - **Testing**: Pytest with >= 80% coverage
 

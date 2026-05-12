@@ -56,7 +56,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.game
     container_name: temporal-echoes-test
-    command: poetry run pytest tests/ -v --cov=src
+    command: uv run pytest tests/ -v --cov=src
     environment:
       - OLLAMA_HOST=ollama:11434
       - PYTHONUNBUFFERED=1
