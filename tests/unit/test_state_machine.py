@@ -595,9 +595,9 @@ def test_game_over_is_reachable() -> None:
 
     for state in states_with_game_over:
         transitions = GameStateMachine.ALLOWED_TRANSITIONS[state]
-        assert (
-            GameState.GAME_OVER in transitions
-        ), f"{state.name} should allow transition to GAME_OVER"
+        assert GameState.GAME_OVER in transitions, (
+            f"{state.name} should allow transition to GAME_OVER"
+        )
 
 
 def test_exploring_is_central_hub() -> None:
@@ -606,9 +606,9 @@ def test_exploring_is_central_hub() -> None:
 
     for state, transitions in GameStateMachine.ALLOWED_TRANSITIONS.items():
         if state != GameState.EXPLORING:
-            assert (
-                len(transitions) <= exploring_transitions
-            ), "EXPLORING should be the hub state with most transitions"
+            assert len(transitions) <= exploring_transitions, (
+                "EXPLORING should be the hub state with most transitions"
+            )
 
 
 # ============================================================================

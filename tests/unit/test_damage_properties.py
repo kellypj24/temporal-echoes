@@ -54,9 +54,9 @@ class TestDamageProperties:
             calc = DamageCalculator(rng_seed=42)  # Same seed for each
             result = calc.calculate(attacker_atk=atk, defender_def=30, crit_chance=0)
 
-            assert (
-                result.damage >= previous_damage
-            ), f"Damage decreased: {atk} ATK -> {result.damage} (prev: {previous_damage})"
+            assert result.damage >= previous_damage, (
+                f"Damage decreased: {atk} ATK -> {result.damage} (prev: {previous_damage})"
+            )
             previous_damage = result.damage
 
     def test_higher_defense_decreases_damage(self):
@@ -68,9 +68,9 @@ class TestDamageProperties:
             calc = DamageCalculator(rng_seed=42)  # Same seed for each
             result = calc.calculate(attacker_atk=50, defender_def=def_val, crit_chance=0)
 
-            assert (
-                result.damage <= previous_damage
-            ), f"Damage increased: {def_val} DEF -> {result.damage} (prev: {previous_damage})"
+            assert result.damage <= previous_damage, (
+                f"Damage increased: {def_val} DEF -> {result.damage} (prev: {previous_damage})"
+            )
             previous_damage = result.damage
 
     def test_boost_always_increases_damage(self):
@@ -172,9 +172,9 @@ class TestDamageProperties:
         for _ in range(100):
             result = calc.calculate(attacker_atk=50, defender_def=30, crit_chance=0)
 
-            assert (
-                0.85 <= result.random_factor <= 1.00
-            ), f"Random factor {result.random_factor} out of range"
+            assert 0.85 <= result.random_factor <= 1.00, (
+                f"Random factor {result.random_factor} out of range"
+            )
 
     def test_determinism_with_all_parameters(self):
         """Test determinism holds with all parameter combinations."""
@@ -241,6 +241,6 @@ class TestDamageProperties:
         for atk in [1, 10, 50, 100, 500]:
             for def_val in [1, 10, 50, 100, 500]:
                 expected = calc.calculate_expected_damage(attacker_atk=atk, defender_def=def_val)
-                assert (
-                    1 <= expected <= 9999
-                ), f"Expected {expected} out of range (ATK={atk}, DEF={def_val})"
+                assert 1 <= expected <= 9999, (
+                    f"Expected {expected} out of range (ATK={atk}, DEF={def_val})"
+                )

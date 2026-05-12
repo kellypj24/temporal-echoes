@@ -1,12 +1,11 @@
-[tool.poetry]
+[project]
 name = "temporal-echoes"
 version = "0.1.0"
-description = "16-bit tribute RPG with AI Dungeon Master - A time-travel adventure powered by Python, Pygame, and local LLMs"
-authors = ["PJ Kelly <pjkelly@example.com>"]
+description = "16-bit tribute RPG with AI Dungeon Master — a time-travel adventure powered by Python, Pygame, and pluggable LLMs"
 readme = "README.md"
-license = "MIT"
-homepage = "https://github.com/kellypj24/temporal-echoes"
-repository = "https://github.com/kellypj24/temporal-echoes"
+license = { text = "MIT" }
+requires-python = ">=3.13,<4.0"
+authors = [{ name = "PJ Kelly", email = "pjkelly@example.com" }]
 keywords = ["game", "rpg", "ai", "llm", "pygame", "time-travel", "event-sourcing"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -15,33 +14,41 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.13",
 ]
-packages = [{include = "src"}]
+dependencies = [
+    "pygame>=2.6.1,<3.0",
+    "duckdb>=1.1.3,<2.0",
+    "dbt-duckdb>=1.10.0,<2.0",
+    "aiohttp>=3.11.0,<4.0",
+    "pydantic>=2.10.0,<3.0",
+    "python-dotenv>=1.0.0,<2.0",
+    "pydantic-settings>=2.12.0,<3.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-pygame = "^2.6.1"
-duckdb = "^1.1.3"
-dbt-duckdb = "^1.10.0"
-aiohttp = "^3.11.0"
-pydantic = "^2.10.0"
-python-dotenv = "^1.0.0"
-pydantic-settings = "^2.12.0"
+[project.urls]
+Homepage = "https://github.com/kellypj24/temporal-echoes"
+Repository = "https://github.com/kellypj24/temporal-echoes"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.0"
-pytest-cov = "^6.0.0"
-pytest-asyncio = "^0.24.0"
-ruff = "^0.8.0"
-mypy = "^1.13.0"
-bandit = "^1.7.10"
-ipython = "^8.30.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 temporal-echoes = "src.main:main"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-cov>=6.0,<7.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "ruff>=0.8,<1.0",
+    "mypy>=1.13,<2.0",
+    "bandit>=1.7.10,<2.0",
+    "ipython>=8.30,<9.0",
+]
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
 
 # Ruff configuration
 [tool.ruff]
@@ -151,4 +158,3 @@ directory = "htmlcov"
 [tool.bandit]
 exclude_dirs = ["tests", "venv", ".venv"]
 skips = ["B101"]  # Skip assert_used (we use asserts in tests)
-

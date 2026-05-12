@@ -11,32 +11,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
-          restore-keys: poetry-${{ runner.os }}-
+        run: uv python install 3.13
 
       - name: Install dependencies
-        run: poetry install --with dev
+        run: uv sync
 
       - name: Ruff lint
-        run: poetry run ruff check src/ tests/
+        run: uv run ruff check src/ tests/
 
       - name: Ruff format check
-        run: poetry run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/
 
       - name: Mypy type check
-        run: poetry run mypy src/
+        run: uv run mypy src/
 
   test:
     name: Targeted Tests
@@ -46,23 +40,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
-          restore-keys: poetry-${{ runner.os }}-
+        run: uv python install 3.13
 
       - name: Install dependencies
-        run: poetry install --with dev
+        run: uv sync
 
       - name: Determine tests to run
         id: resolve-tests
@@ -76,7 +64,7 @@ jobs:
 
           while IFS= read -r file; do
             case "$file" in
-              pyproject.toml|poetry.lock)
+              pyproject.toml|uv.lock)
                 RUN_FULL=true
                 ;;
               tests/**/*.py)
@@ -125,5 +113,5 @@ jobs:
       - name: Run tests
         if: steps.resolve-tests.outputs.skip != 'true'
         run: |
-          poetry run pytest ${{ steps.resolve-tests.outputs.test_files }} \
+          uv run pytest ${{ steps.resolve-tests.outputs.test_files }} \
             -v --tb=short --cov=src --cov-report=term-missing

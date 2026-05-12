@@ -243,10 +243,7 @@ class GameConfig(BaseSettings):
     def __repr__(self) -> str:
         """Developer-friendly string representation."""
         return (
-            f"GameConfig("
-            f"fps={self.fps_target}, "
-            f"db={self.database_path}, "
-            f"debug={self.debug_mode})"
+            f"GameConfig(fps={self.fps_target}, db={self.database_path}, debug={self.debug_mode})"
         )
 
     def __str__(self) -> str:

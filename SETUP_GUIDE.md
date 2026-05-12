@@ -23,25 +23,37 @@ Complete guide for setting up your development environment for Temporal Echoes.
    
    Install from: https://www.python.org/downloads/
 
-2. **Poetry** (Python package manager)
+2. **uv** (Python package + project manager)
    ```bash
-   # Install Poetry
-   curl -sSL https://install.python-poetry.org | python3 -
-   
+   # Install uv (macOS)
+   brew install uv
+
+   # Or the official installer
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+
    # Verify installation
-   poetry --version
+   uv --version
    ```
 
-3. **Docker & Docker Compose**
+3. **just** (command runner)
+   ```bash
+   # macOS
+   brew install just
+
+   # Verify
+   just --version
+   ```
+
+4. **Docker & Docker Compose**
    ```bash
    # Verify Docker
    docker --version
-   docker-compose --version
+   docker compose version
    ```
-   
+
    Install from: https://www.docker.com/get-started
 
-4. **Git**
+5. **Git**
    ```bash
    git --version
    ```
@@ -50,7 +62,6 @@ Complete guide for setting up your development environment for Temporal Echoes.
 
 - **Cursor IDE** (AI-powered editor) - https://cursor.sh
 - **Visual Studio Code** (alternative)
-- **Make** (usually pre-installed on macOS/Linux)
 
 ---
 
@@ -81,11 +92,11 @@ Key settings to review:
 ### 3. Install Python Dependencies
 
 ```bash
-# Install all dependencies
-make install
+# Install all dependencies (dev group included)
+just install
 
-# Or manually with Poetry
-poetry install
+# Or directly with uv
+uv sync
 ```
 
 This installs:
@@ -99,7 +110,7 @@ This installs:
 
 ```bash
 # Start Ollama container
-make docker-up
+just docker-up
 
 # Verify Ollama is running
 curl http://localhost:11434/api/tags
@@ -132,7 +143,7 @@ docker exec temporal-echoes-ollama ollama pull llama3.2:70b
 
 ```bash
 # Create SQLite and DuckDB databases
-make init-db
+just init-db
 
 # Verify databases created
 ls -lh data/
@@ -146,7 +157,7 @@ You should see:
 
 ```bash
 # Run full test suite
-make test
+just test
 
 # Expected output: All tests passing with coverage report
 ```
@@ -155,7 +166,7 @@ make test
 
 ```bash
 # Launch game
-make run
+just run
 ```
 
 ---
@@ -167,27 +178,27 @@ make run
 Run these commands to verify your setup:
 
 ```bash
-# 1. Python dependencies
-poetry check
+# 1. Lockfile resolves
+uv lock --check
 
 # 2. Linting passes
-make lint
+just lint
 
 # 3. Tests pass
-make test
+just test
 
 # 4. Ollama is accessible
 curl http://localhost:11434/api/tags
 
 # 5. Docker containers running
-docker-compose ps
+docker compose ps
 ```
 
 ### Expected Output
 
 ```
 ✓ Python 3.13.x installed
-✓ Poetry 1.8.0 installed
+✓ uv installed
 ✓ All dependencies installed
 ✓ Ollama service running
 ✓ Llama 3.2 model available
@@ -200,10 +211,10 @@ docker-compose ps
 
 ## Troubleshooting
 
-### Issue: Poetry not found
+### Issue: uv not found
 
 ```bash
-# Add Poetry to PATH
+# Add uv's install dir to PATH (the curl installer puts it under ~/.local/bin)
 export PATH="$HOME/.local/bin:$PATH"
 
 # Add to shell profile for persistence
@@ -224,11 +235,11 @@ newgrp docker
 
 ```bash
 # Check Docker logs
-docker-compose logs ollama
+docker compose logs ollama
 
 # Restart container
-make docker-down
-make docker-up
+just docker-down
+just docker-up
 
 # Check port availability
 lsof -i :11434
@@ -246,7 +257,7 @@ export DISPLAY=:0
 ```
 
 **On macOS/Windows:**
-- Run game directly with `make run` (not in Docker)
+- Run game directly with `just run` (not in Docker)
 - Docker display support is complex on non-Linux systems
 
 ### Issue: Import errors when running game
@@ -255,9 +266,8 @@ export DISPLAY=:0
 # Ensure PYTHONPATH is set
 export PYTHONPATH=/path/to/temporal-echoes
 
-# Or use Poetry shell
-poetry shell
-python -m src.main
+# Or run inside the uv-managed venv
+uv run python -m src.main
 ```
 
 ### Issue: Database not found
@@ -265,12 +275,12 @@ python -m src.main
 ```bash
 # Recreate databases
 rm -f data/events.db data/analytics.duckdb
-make init-db
+just init-db
 ```
 
 ### Issue: LLM responses timing out
 
-1. Check Ollama is running: `docker-compose ps`
+1. Check Ollama is running: `docker compose ps`
 2. Verify model loaded: `docker exec temporal-echoes-ollama ollama list`
 3. Test Ollama directly:
    ```bash
@@ -290,10 +300,10 @@ make init-db
 
 ```bash
 # 1. Start development environment
-make docker-up
+just docker-up
 
 # 2. Run tests to ensure everything works
-make test
+just test
 
 # 3. Start coding!
 ```
@@ -301,14 +311,14 @@ make test
 ### Before Committing
 
 ```bash
-# 1. Format code
-make format
+# 1. Auto-fix lint + format
+just fmt
 
-# 2. Run linting
-make lint
+# 2. Run linting (mirrors CI)
+just lint
 
 # 3. Run tests
-make test
+just test
 
 # 4. If all pass, commit
 git add .
@@ -370,16 +380,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 | Command | Purpose |
 |---------|---------|
-| `make help` | Show all available commands |
-| `make dev-setup` | Complete setup from scratch |
-| `make test` | Run test suite |
-| `make lint` | Check code quality |
-| `make run` | Start game |
-| `make dbt-run` | Update analytics |
-| `make docker-up` | Start services |
-| `make docker-down` | Stop services |
-| `make clean` | Clean generated files |
-| `make info` | Show environment info |
+| `just` | Show all available recipes |
+| `just install` | Install dependencies (`uv sync`) |
+| `just test` | Run test suite |
+| `just lint` | Check code quality |
+| `just fmt` | Auto-fix lint + format |
+| `just run` | Start game |
+| `just dbt-run` | Update analytics |
+| `just docker-up` | Start services |
+| `just docker-down` | Stop services |
+| `just clean` | Clean generated files |
 
 ---
 
