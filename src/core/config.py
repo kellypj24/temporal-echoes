@@ -60,10 +60,13 @@ class GameConfig(BaseSettings):
         database_path: Path to SQLite event store database
         duckdb_path: Path to DuckDB analytics database
 
+        llm_provider: Active LLM backend (ollama, anthropic)
         ollama_host: Ollama API host:port
         llm_model: LLM model name (e.g., llama3.2, deepseek)
         llm_timeout: LLM request timeout in seconds (1.0-30.0)
         llm_temperature: LLM temperature for creativity (0.0-2.0)
+        anthropic_api_key: API key for the Anthropic provider (optional)
+        anthropic_model: Claude model ID when llm_provider=anthropic
 
         debug_mode: Enable debug mode (verbose logging)
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -127,6 +130,12 @@ class GameConfig(BaseSettings):
     # AI Settings (Phase 4+)
     # ========================================================================
 
+    llm_provider: str = Field(
+        default="ollama",
+        pattern="^(ollama|anthropic)$",
+        description="Active LLM backend (ollama, anthropic)",
+    )
+
     ollama_host: str = Field(
         default="localhost:11434",
         description="Ollama API host:port",
@@ -149,6 +158,16 @@ class GameConfig(BaseSettings):
         ge=0.0,
         le=2.0,
         description="LLM temperature for creativity",
+    )
+
+    anthropic_api_key: str | None = Field(
+        default=None,
+        description="API key for the Anthropic provider (read from env)",
+    )
+
+    anthropic_model: str = Field(
+        default="claude-sonnet-4-6",
+        description="Claude model ID used when llm_provider=anthropic",
     )
 
     # ========================================================================
