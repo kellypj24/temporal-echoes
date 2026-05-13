@@ -98,8 +98,17 @@ jobs:
               src/ai/providers/anthropic.py)
                 TEST_FILES="$TEST_FILES tests/unit/test_provider_anthropic.py"
                 ;;
+              src/ai/providers/mock.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_provider_mock.py"
+                ;;
               src/ai/providers/*.py)
                 TEST_FILES="$TEST_FILES tests/unit/test_provider_base.py"
+                ;;
+              src/ai/narrator.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_narrator.py"
+                ;;
+              scripts/eval_runner.py)
+                TEST_FILES="$TEST_FILES tests/unit/test_eval_runner.py"
                 ;;
             esac
           done <<< "$CHANGED"
@@ -127,3 +136,38 @@ jobs:
         run: |
           uv run pytest ${{ steps.resolve-tests.outputs.test_files }} \
             -v --tb=short --cov=src --cov-report=term-missing
+
+  eval-go:
+    name: Eval Harness (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: eval/go.sum
+
+      - name: Vet
+        run: go -C eval vet ./...
+
+      - name: Test
+        run: go -C eval test ./...
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Install Python deps
+        run: uv sync
+
+      - name: Run eval harness against mock provider (smoke)
+        env:
+          TEMPORAL_LLM_PROVIDER: mock
+        run: go -C eval run . -root "$GITHUB_WORKSPACE" -timeout 30s
