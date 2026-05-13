@@ -31,6 +31,9 @@ env/
 # uv (lockfile is committed; venv is not)
 .venv/
 
+# Compiled Go eval-runner binary (built by `just eval-build`)
+eval/te-eval
+
 # IDEs
 .vscode/
 .idea/

@@ -1,0 +1,20 @@
+# Location description fixtures.
+#
+# The narrator's describe_location() returns a free-text 1-3 sentence
+# atmospheric description. Mock provider routes "location / describe the /
+# you arrive / you enter" prompts to a canned response containing
+# "stone arches".
+#
+# Run:
+#   TEMPORAL_LLM_PROVIDER=mock just eval-go -category location
+
+fixtures:
+  - id: location_temple_dawn
+    category: location
+    input:
+      location_name: Hollow Bell Temple
+      beats: ruined, foggy, dawn
+    expect:
+      contains_any: ["stone", "arches", "moss"]
+      min_length: 20
+      max_length: 400

@@ -7,6 +7,7 @@ with zero changes to game/agent code.
 Supported providers:
   ollama     — local Ollama (default, offline-capable)
   anthropic  — Claude API (higher quality, requires ANTHROPIC_API_KEY)
+  mock       — deterministic in-process responses for harness iteration
 """
 
 from typing import Any, Protocol, runtime_checkable
@@ -115,7 +116,11 @@ def get_provider(name: str | None = None) -> LLMProvider:
         from src.ai.providers.anthropic import AnthropicProvider
 
         return AnthropicProvider()
+    if provider == "mock":
+        from src.ai.providers.mock import MockProvider
+
+        return MockProvider()
     raise ValueError(
         f"Unknown LLM provider: {provider!r}. "
-        "Set TEMPORAL_LLM_PROVIDER to one of: ollama, anthropic"
+        "Set TEMPORAL_LLM_PROVIDER to one of: ollama, anthropic, mock"
     )

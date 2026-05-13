@@ -1,0 +1,28 @@
+# NPC dialogue fixtures.
+#
+# The narrator's npc_dialogue() returns NPCLine { line, mood }.
+# Mock provider routes "npc / dialogue / says / greets / responds" prompts to
+# a canned response with mood="wary".
+#
+# Run:
+#   TEMPORAL_LLM_PROVIDER=mock just eval-go -category npc
+
+fixtures:
+  - id: npc_shrine_greeter
+    category: npc
+    input:
+      npc_name: Eldra
+      situation: Player approaches the shrine of the Hollow Bell for the first time.
+    expect:
+      mood_one_of: ["wary", "calm", "fearful", "welcoming", "neutral"]
+      min_length: 5
+      max_length: 400
+
+  - id: npc_post_combat_witness
+    category: npc
+    input:
+      npc_name: Town Guard
+      situation: Player has just defeated a monster in the village square.
+    expect:
+      mood_one_of: ["wary", "grateful", "shocked", "stern", "relieved", "neutral"]
+      min_length: 5

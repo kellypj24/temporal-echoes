@@ -1,0 +1,36 @@
+# Combat narration fixtures.
+#
+# The narrator's narrate_combat() returns CombatNarration { prose, intensity }.
+# Mock provider routes "combat / attack / strike / hit / damage" prompts to a
+# canned response containing "Steel rings against steel" with intensity=7,
+# so these fixtures all pass against TEMPORAL_LLM_PROVIDER=mock.
+#
+# Run:
+#   TEMPORAL_LLM_PROVIDER=mock just eval-go -category combat
+
+fixtures:
+  - id: combat_basic_strike
+    category: combat
+    input:
+      actor: Aria
+      action: slashes
+      target: goblin
+      damage: 12
+    expect:
+      contains_any: ["steel", "blow", "blade", "strike"]
+      intensity_min: 1
+      intensity_max: 10
+      min_length: 10
+
+  - id: combat_heavy_blow
+    category: combat
+    input:
+      actor: Boss
+      action: crushes
+      target: Aria
+      damage: 42
+    expect:
+      intensity_min: 1
+      intensity_max: 10
+      min_length: 10
+      max_length: 400
