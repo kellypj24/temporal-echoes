@@ -98,6 +98,7 @@ class EventStore:
         Schema follows DEC-0001 and DEC-0004 (Hybrid CQRS):
         - JSON columns for flexibility
         - aggregate_id/type for future read models
+        - branch_id for combat-local rewind branches (Phase 3)
         - Indexes for timeline queries
         """
         assert self._conn is not None, "Connection must be initialized"
@@ -110,6 +111,7 @@ class EventStore:
                     event_timestamp REAL NOT NULL,
                     session_id TEXT NOT NULL,
                     timeline_id TEXT NOT NULL,
+                    branch_id INTEGER NOT NULL DEFAULT 0,
                     event_type TEXT NOT NULL,
                     aggregate_id TEXT,
                     aggregate_type TEXT,
@@ -119,11 +121,30 @@ class EventStore:
             """
             )
 
+            # Phase 3 migration: add branch_id to pre-existing databases.
+            # SQLite has no `ADD COLUMN IF NOT EXISTS`, so introspect first.
+            existing_cols = {
+                row["name"] for row in self._conn.execute("PRAGMA table_info(game_events)")
+            }
+            if "branch_id" not in existing_cols:
+                self._conn.execute(
+                    "ALTER TABLE game_events ADD COLUMN branch_id INTEGER NOT NULL DEFAULT 0"
+                )
+                logger.info("Migrated game_events: added branch_id column")
+
             # Indexes for fast timeline queries
             self._conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_timeline_id
                 ON game_events(timeline_id, event_timestamp)
+            """
+            )
+
+            # Branch-aware index for rewind replay queries (Phase 3)
+            self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_timeline_branch
+                ON game_events(timeline_id, branch_id, event_timestamp)
             """
             )
 
@@ -194,16 +215,17 @@ class EventStore:
             self._conn.execute(
                 """
                 INSERT INTO game_events (
-                    event_id, event_timestamp, session_id, timeline_id,
+                    event_id, event_timestamp, session_id, timeline_id, branch_id,
                     event_type, aggregate_id, aggregate_type,
                     event_data, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.event_id,
                     event.event_timestamp,
                     event.session_id,
                     event.timeline_id,
+                    event.branch_id,
                     event.event_type,
                     event.aggregate_id,
                     event.aggregate_type,
@@ -248,6 +270,7 @@ class EventStore:
                 event_timestamp=row["event_timestamp"],
                 session_id=row["session_id"],
                 timeline_id=row["timeline_id"],
+                branch_id=row["branch_id"],
                 event_type=row["event_type"],
                 aggregate_id=row["aggregate_id"],
                 aggregate_type=row["aggregate_type"],
@@ -290,6 +313,7 @@ class EventStore:
                 event_timestamp=row["event_timestamp"],
                 session_id=row["session_id"],
                 timeline_id=row["timeline_id"],
+                branch_id=row["branch_id"],
                 event_type=row["event_type"],
                 aggregate_id=row["aggregate_id"],
                 aggregate_type=row["aggregate_type"],
@@ -370,6 +394,7 @@ class EventStore:
                     event_timestamp=event.event_timestamp,
                     session_id=session_id,
                     timeline_id=new_timeline_id,  # New timeline
+                    branch_id=event.branch_id,
                     event_type=event.event_type,
                     aggregate_id=event.aggregate_id,
                     aggregate_type=event.aggregate_type,
@@ -380,16 +405,17 @@ class EventStore:
                 self._conn.execute(
                     """
                     INSERT INTO game_events (
-                        event_id, event_timestamp, session_id, timeline_id,
+                        event_id, event_timestamp, session_id, timeline_id, branch_id,
                         event_type, aggregate_id, aggregate_type,
                         event_data, metadata
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         new_event.event_id,
                         new_event.event_timestamp,
                         new_event.session_id,
                         new_event.timeline_id,
+                        new_event.branch_id,
                         new_event.event_type,
                         new_event.aggregate_id,
                         new_event.aggregate_type,
