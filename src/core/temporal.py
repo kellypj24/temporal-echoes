@@ -17,9 +17,38 @@ Design constraints (see assignments/active/phase-3-timeline-mechanics/DESIGN.md)
   abilities only exist in combat.
 """
 
+from dataclasses import dataclass
+
 from src.core.combat_events import CombatEventBuilder
 from src.core.persistence import EventStore
 from src.entities.combatant import Combatant
+
+
+@dataclass(frozen=True)
+class RewindResult:
+    """
+    Outcome payload returned from a successful ``TemporalSystem.rewind`` call.
+
+    The result is informational: by the time it is constructed, the
+    CHARGE_SPENT and TEMPORAL_REWIND events are already persisted and the
+    in-memory ``CombatContext`` is positioned at ``to_turn`` on
+    ``new_branch_id``. Failed rewinds raise an exception instead of
+    returning this dataclass.
+
+    Attributes:
+        from_turn: Turn number combat was at before rewind.
+        to_turn: Turn number combat resumed at.
+        new_branch_id: Branch identifier allocated for the resumed timeline.
+        events_replayed: Count of rewindable events re-applied to rebuild
+            combat state up to ``to_turn``.
+        charge_spent: Amount of temporal charge debited from the actor.
+    """
+
+    from_turn: int
+    to_turn: int
+    new_branch_id: int
+    events_replayed: int
+    charge_spent: int
 
 
 class TemporalSystem:

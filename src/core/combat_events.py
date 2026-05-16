@@ -593,3 +593,53 @@ class CombatEventBuilder:
             branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
+
+    def temporal_rewind(
+        self,
+        turn_number: int,
+        actor_id: str,
+        from_turn: int,
+        to_turn: int,
+        branch_id: int,
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create TemporalRewind event marking a successful rewind.
+
+        Emitted *after* replay succeeds and the new branch is live in memory.
+        The ``branch_id`` argument is the freshly allocated branch (one higher
+        than the pre-rewind branch); the event is stamped with that same
+        branch_id so post-rewind queries against the active branch chain
+        surface the rewind boundary.
+
+        Args:
+            turn_number: Turn position after rewind (i.e. ``to_turn``).
+            actor_id: ID of the combatant who triggered the rewind.
+            from_turn: Turn number combat was at before rewind.
+            to_turn: Turn number combat resumed at.
+            branch_id: Newly allocated branch identifier.
+            **kwargs: Additional context fields.
+
+        Returns:
+            GameEvent with TemporalRewind type, stamped with the new branch_id.
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "actor_id": actor_id,
+            "from_turn": from_turn,
+            "to_turn": to_turn,
+            "branch_id": branch_id,
+        }
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.TEMPORAL_REWIND,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=branch_id,
+            event_data=json.dumps(event_data),
+        )
