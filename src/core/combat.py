@@ -20,6 +20,7 @@ from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
 from src.core.events import GameEvent
 from src.core.persistence import EventStore
+from src.core.temporal import TemporalSystem
 from src.entities import Combatant, DamageType, Enemy, Player
 
 
@@ -74,6 +75,9 @@ class CombatContext:
         enemies: List of enemy combatants.
         event_store: Persistence layer for combat events.
         logger: Text formatter for combat messages.
+        temporal_system: Read-only access to the TemporalSystem for tests and
+            external callers; construction is internal (DI-via-constructor of
+            subsystems is acceptable when both arguments are already injected).
     """
 
     def __init__(
@@ -135,6 +139,12 @@ class CombatContext:
             archetype = _ARCHETYPE_MAP.get(enemy.archetype, AIArchetype.AGGRESSIVE)
             ai_rng = random.Random(self._rng.randint(0, 2**31))
             self._enemy_ais[enemy.id] = create_enemy_ai(enemy, archetype, ai_rng)
+
+        # Temporal system (constructed here from already-injected subsystems)
+        self._temporal = TemporalSystem(
+            event_store=event_store,
+            event_builder=self._event_builder,
+        )
 
         # Combat state
         self._phase = CombatPhase.INITIALIZING
@@ -222,6 +232,16 @@ class CombatContext:
         """Return all accumulated combat log messages."""
         return self._logger.messages
 
+    @property
+    def temporal_system(self) -> TemporalSystem:
+        """
+        Read-only access to the TemporalSystem for tests and external callers.
+
+        Returns:
+            The TemporalSystem instance owned by this CombatContext.
+        """
+        return self._temporal
+
     # --- Core Flow ---
 
     def start_round(self) -> list[str]:
@@ -265,6 +285,20 @@ class CombatContext:
                 amount_gained=actual_gained,
             )
         )
+
+        # Regenerate 1 temporal charge for player and each living enemy.
+        # regenerate() emits CHARGE_REGENERATED only when charge is actually gained.
+        self._temporal.regenerate(
+            actor=self.player,
+            amount=1,
+            turn_number=self._total_turns,
+        )
+        for enemy in self.living_enemies:
+            self._temporal.regenerate(
+                actor=enemy,
+                amount=1,
+                turn_number=self._total_turns,
+            )
 
         # Set phase based on first combatant
         self._set_phase_for_current_combatant()

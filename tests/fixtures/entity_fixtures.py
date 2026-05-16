@@ -21,6 +21,8 @@ def create_test_player(
     speed: int = 40,
     boost_points: int = 0,
     max_boost_points: int = 5,
+    temporal_charge: int = 0,
+    max_temporal_charge: int = 3,
 ) -> Player:
     """
     Create a test Player instance with default values.
@@ -36,6 +38,8 @@ def create_test_player(
         speed: Speed stat
         boost_points: Current BP
         max_boost_points: Maximum BP
+        temporal_charge: Starting temporal charge (default 0)
+        max_temporal_charge: Maximum temporal charge (default 3)
 
     Returns:
         Configured Player instance
@@ -51,6 +55,8 @@ def create_test_player(
         speed=speed,
         boost_points=boost_points,
         max_boost_points=max_boost_points,
+        temporal_charge=temporal_charge,
+        max_temporal_charge=max_temporal_charge,
     )
 
 
@@ -69,6 +75,8 @@ def create_test_enemy(
     is_broken: bool = False,
     break_turns_remaining: int = 0,
     archetype: str = "aggressive",
+    temporal_charge: int = 0,
+    max_temporal_charge: int = 3,
 ) -> Enemy:
     """
     Create a test Enemy instance with default values.
@@ -86,6 +94,8 @@ def create_test_enemy(
         max_shield_points: Maximum shield strength
         weaknesses: List of weakness damage types (default: FIRE, ICE)
         archetype: AI archetype name
+        temporal_charge: Starting temporal charge (default 0)
+        max_temporal_charge: Maximum temporal charge (default 3)
 
     Returns:
         Configured Enemy instance
@@ -108,6 +118,8 @@ def create_test_enemy(
         is_broken=is_broken,
         break_turns_remaining=break_turns_remaining,
         archetype=archetype,
+        temporal_charge=temporal_charge,
+        max_temporal_charge=max_temporal_charge,
     )
 
 

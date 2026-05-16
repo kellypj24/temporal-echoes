@@ -22,10 +22,16 @@ class CombatEventBuilder:
     Phase 1's event store. All events use the combat_id as aggregate_id
     for easy querying of complete combat sequences.
 
+    The builder is mutable so that ``set_branch`` can update the active
+    branch_id after a rewind without replacing the builder instance.
+    Branch 0 is the original timeline; each rewind in a combat increments
+    the branch (see Phase 3 Step 3 for full branch propagation).
+
     Attributes:
         session_id: Current game session identifier
         timeline_id: Current timeline branch identifier
         combat_id: Unique identifier for this combat encounter
+        branch_id: Current rewind branch (0 = original line)
 
     Example:
         >>> builder = CombatEventBuilder(
@@ -43,6 +49,7 @@ class CombatEventBuilder:
     session_id: str
     timeline_id: str
     combat_id: str
+    branch_id: int = 0
 
     def __post_init__(self) -> None:
         """Validate required fields."""
@@ -52,6 +59,25 @@ class CombatEventBuilder:
             raise ValueError("timeline_id is required")
         if not self.combat_id:
             raise ValueError("combat_id is required")
+
+    def set_branch(self, branch_id: int) -> None:
+        """
+        Update the active rewind branch for subsequent event emissions.
+
+        Called by ``CombatContext.rewind_to_turn()`` after a rewind to
+        ensure all post-rewind events carry the new branch identifier.
+        The builder instance is reused (not replaced) so that existing
+        references to it remain valid.
+
+        Args:
+            branch_id: New branch identifier (must be ≥ 0)
+
+        Raises:
+            ValueError: If branch_id is negative
+        """
+        if branch_id < 0:
+            raise ValueError(f"branch_id cannot be negative, got {branch_id}")
+        self.branch_id = branch_id
 
     def combat_started(
         self,
@@ -103,6 +129,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -158,6 +185,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -193,6 +221,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -274,6 +303,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -322,6 +352,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -363,6 +394,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -411,6 +443,7 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
 
@@ -451,5 +484,112 @@ class CombatEventBuilder:
             aggregate_type="combat",
             session_id=self.session_id,
             timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
+            event_data=json.dumps(event_data),
+        )
+
+    def charge_spent(
+        self,
+        turn_number: int,
+        actor_id: str,
+        amount: int,
+        ability: str,
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create ChargeSpent event for temporal ability activation.
+
+        Emitted before the charge is deducted from the actor so that
+        the event carries the "intent to spend" at the pre-spend turn
+        position. The actor's ``spend_charge`` call follows immediately.
+
+        Args:
+            turn_number: Turn number at which the ability is activated
+            actor_id: ID of the combatant spending charge
+            amount: Number of temporal charges spent
+            ability: Name of the ability being activated (e.g. "rewind")
+            **kwargs: Additional context fields
+
+        Returns:
+            GameEvent with ChargeSpent type
+
+        Example:
+            >>> event = builder.charge_spent(
+            ...     turn_number=3,
+            ...     actor_id="player_1",
+            ...     amount=1,
+            ...     ability="rewind"
+            ... )
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "actor_id": actor_id,
+            "amount": amount,
+            "ability": ability,
+        }
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.CHARGE_SPENT,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
+            event_data=json.dumps(event_data),
+        )
+
+    def charge_regenerated(
+        self,
+        turn_number: int,
+        actor_id: str,
+        amount: int,
+        new_total: int,
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create ChargeRegenerated event for per-round charge recovery.
+
+        Emitted only when at least 1 charge is actually gained (i.e. when
+        the combatant is not already at ``max_temporal_charge``). The caller
+        is responsible for checking the actual gained amount before emitting.
+
+        Args:
+            turn_number: Turn number at the time of regeneration
+            actor_id: ID of the combatant gaining charge
+            amount: Actual charge gained (may be less than requested if capped)
+            new_total: Combatant's temporal_charge after the gain
+            **kwargs: Additional context fields
+
+        Returns:
+            GameEvent with ChargeRegenerated type
+
+        Example:
+            >>> event = builder.charge_regenerated(
+            ...     turn_number=0,
+            ...     actor_id="player_1",
+            ...     amount=1,
+            ...     new_total=1
+            ... )
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "actor_id": actor_id,
+            "amount": amount,
+            "new_total": new_total,
+        }
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.CHARGE_REGENERATED,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
