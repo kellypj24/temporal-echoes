@@ -20,7 +20,7 @@ from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
 from src.core.events import GameEvent
 from src.core.persistence import EventStore
-from src.core.temporal import TemporalSystem
+from src.core.temporal import RewindResult, TemporalSystem
 from src.entities import Combatant, DamageType, Enemy, Player
 
 
@@ -145,6 +145,9 @@ class CombatContext:
             event_store=event_store,
             event_builder=self._event_builder,
         )
+
+        # Combat-local rewind branch (0 = original line, increments per rewind)
+        self._current_branch_id: int = 0
 
         # Combat state
         self._phase = CombatPhase.INITIALIZING
@@ -688,6 +691,40 @@ class CombatContext:
             self._phase = CombatPhase.AWAITING_PLAYER_INPUT
         else:
             self._phase = CombatPhase.EXECUTING_TURN
+
+    def rewind_to_turn(
+        self,
+        target_turn: int,
+        actor: Combatant | None = None,
+    ) -> RewindResult:
+        """
+        Rewind combat to ``target_turn`` on a new branch.
+
+        Delegates to ``TemporalSystem.rewind`` after computing ``turns_back``
+        from the difference between the current total turns and the requested
+        target. The player is used as the actor if none is provided.
+
+        Args:
+            target_turn: Turn number to rewind to (must be ≥ 0 and ≤
+                ``_total_turns``).
+            actor: Combatant spending the charge (defaults to the player).
+
+        Returns:
+            RewindResult with from_turn, to_turn, new_branch_id,
+            events_replayed, and charge_spent.
+
+        Raises:
+            ValueError: If ``turns_back < 1`` (i.e. ``target_turn >=
+                _total_turns``).
+            NotImplementedError: If ``turns_back > 1`` (Step 4 scope).
+            InsufficientChargeError: If the actor has insufficient charge.
+            RewindBoundaryError: If the target turn would be < 0.
+            RewindUnavailableError: If combat phase forbids rewind.
+            RewindReplayError: If event replay fails mid-flight.
+        """
+        actor = actor or self.player
+        turns_back = self._total_turns - target_turn
+        return self._temporal.rewind(self, actor, turns=turns_back)
 
     def _emit_event(self, event: GameEvent) -> None:
         """
