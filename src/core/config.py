@@ -132,8 +132,8 @@ class GameConfig(BaseSettings):
 
     llm_provider: str = Field(
         default="ollama",
-        pattern="^(ollama|anthropic)$",
-        description="Active LLM backend (ollama, anthropic)",
+        pattern="^(ollama|anthropic|langchain|mock)$",
+        description="Active LLM backend (ollama, anthropic, langchain, mock)",
     )
 
     ollama_host: str = Field(

@@ -120,7 +120,11 @@ def get_provider(name: str | None = None) -> LLMProvider:
         from src.ai.providers.mock import MockProvider
 
         return MockProvider()
+    if provider == "langchain":
+        from src.ai.providers.langchain import LangChainProvider
+
+        return LangChainProvider()
     raise ValueError(
         f"Unknown LLM provider: {provider!r}. "
-        "Set TEMPORAL_LLM_PROVIDER to one of: ollama, anthropic, mock"
+        "Set TEMPORAL_LLM_PROVIDER to one of: ollama, anthropic, mock, langchain"
     )
