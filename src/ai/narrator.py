@@ -12,12 +12,39 @@ real AI DM; the seed fixtures and harness wiring exist so that expansion has
 something concrete to plug into.
 """
 
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from src.ai.providers import LLMProvider
+
+
+class Mood(StrEnum):
+    """Closed vocabulary of NPC delivery moods.
+
+    Constraining ``mood`` to an enum lets structured-output / constrained
+    decoding (Ollama ``format``, Anthropic tool schema) *guarantee* a valid
+    value, rather than validating a free string after the fact — which is how
+    off-list moods (e.g. "curious", "mysterious") used to slip through and fail
+    eval ``mood_one_of`` checks. As a ``StrEnum`` it stays ``== "wary"``-comparable
+    and serializes to its plain string value, so existing callers are unaffected.
+    """
+
+    NEUTRAL = "neutral"
+    CALM = "calm"
+    WARY = "wary"
+    FEARFUL = "fearful"
+    WELCOMING = "welcoming"
+    GRATEFUL = "grateful"
+    SHOCKED = "shocked"
+    STERN = "stern"
+    RELIEVED = "relieved"
+    HOSTILE = "hostile"
+    ANGRY = "angry"
+    SORROWFUL = "sorrowful"
+    CHEERFUL = "cheerful"
 
 
 class CombatNarration(BaseModel):
@@ -31,7 +58,7 @@ class NPCLine(BaseModel):
     """A single line of NPC dialogue plus the mood it should be delivered in."""
 
     line: str = Field(min_length=1, max_length=400)
-    mood: str = Field(min_length=1, max_length=40)
+    mood: Mood = Field(description="Delivery mood, constrained to the Mood vocabulary.")
 
 
 _COMBAT_SYSTEM = (
