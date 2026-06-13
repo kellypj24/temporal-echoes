@@ -522,6 +522,15 @@ class TemporalSystem:
             self._apply_event(combat, event)
 
         # --- Position at to_turn ready for player input ---
+        # Replay reset _turn_order to [] above; rebuild it so combat is
+        # resumable after the rewind (otherwise the next advance_turn indexes
+        # into an empty list). Point _turn_index at the player so the resumed
+        # turn belongs to whoever is taking input.
+        combat._turn_order = combat._calculate_turn_order()
+        combat._turn_index = next(
+            (i for i, c in enumerate(combat._turn_order) if c is combat.player),
+            0,
+        )
         combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
 
         return len(replay_set)
