@@ -11,8 +11,6 @@ from __future__ import annotations
 import statistics
 import time
 
-import pytest
-
 from src.core.ai import CombatAction
 from src.core.combat import CombatContext, CombatPhase
 from src.core.persistence import EventStore
@@ -42,14 +40,12 @@ def _build_rewindable_combat(i: int) -> CombatContext:
     return combat
 
 
-@pytest.mark.slow
 class TestRewindBenchmark:
     """Frame-budget proof: rewind(turns=1) completes in <16ms median.
 
-    Marked ``slow`` so it runs in the default suite (guarding the frame
-    budget) but can be deselected with ``-m "not slow"`` for fast functional
-    runs. The 16ms threshold asserts on the median over 100 iterations, giving
-    a wide margin (~100x) so machine noise on CI does not cause flakes.
+    Lives in tests/benchmarks/ as a bench_*.py file, so it is NOT collected
+    by the default suite (just test). Run it via `just bench`. See the
+    "Benchmarks vs tests" note in README / CLAUDE.md for the rationale.
     """
 
     def test_bench_rewind_under_16ms(self) -> None:
