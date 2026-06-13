@@ -534,3 +534,113 @@ def test_game_event_to_dict():
     assert event_dict["event_type"] == event.event_type
     assert event_dict["session_id"] == event.session_id
     assert event_dict["timeline_id"] == event.timeline_id
+    assert event_dict["branch_id"] == event.branch_id
+
+
+# Phase 3: branch_id and rewindability tests
+
+
+def test_game_event_branch_id_defaults_to_zero():
+    """branch_id defaults to 0 (the original timeline branch)."""
+    event = create_test_event()
+    assert event.branch_id == 0
+
+
+def test_branch_id_roundtrip_through_store(in_memory_store):
+    """branch_id persists through INSERT and SELECT."""
+    event = create_test_event(branch_id=3)
+    in_memory_store.append_event(event)
+
+    retrieved = in_memory_store.get_events_by_timeline(event.timeline_id)
+    assert len(retrieved) == 1
+    assert retrieved[0].branch_id == 3
+
+
+def test_store_returns_events_from_multiple_branches(in_memory_store):
+    """Events from different branches coexist in the same timeline."""
+    e0 = create_test_event(branch_id=0, event_data='{"branch": 0}')
+    e1 = create_test_event(branch_id=1, event_data='{"branch": 1}')
+    in_memory_store.append_event(e0)
+    in_memory_store.append_event(e1)
+
+    retrieved = in_memory_store.get_events_by_timeline(e0.timeline_id)
+    branches = {e.branch_id for e in retrieved}
+    assert branches == {0, 1}
+
+
+def test_migration_adds_branch_id_to_existing_db(tmp_path):
+    """Opening an EventStore on a pre-Phase-3 DB adds the branch_id column."""
+    db_path = tmp_path / "legacy.db"
+
+    legacy_conn = sqlite3.connect(str(db_path))
+    legacy_conn.execute(
+        """
+        CREATE TABLE game_events (
+            event_id TEXT PRIMARY KEY,
+            event_timestamp REAL NOT NULL,
+            session_id TEXT NOT NULL,
+            timeline_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            aggregate_id TEXT,
+            aggregate_type TEXT,
+            event_data TEXT NOT NULL,
+            metadata TEXT NOT NULL
+        )
+        """
+    )
+    legacy_conn.execute(
+        """
+        INSERT INTO game_events VALUES
+        ('evt_legacy_1', 1.0, 'sess', 'main', 'GameStart', 'g', 'game', '{}', '{}')
+        """
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    store = EventStore(str(db_path))
+    try:
+        cols = {row["name"] for row in store._conn.execute("PRAGMA table_info(game_events)")}
+        assert "branch_id" in cols
+
+        events = store.get_events_by_timeline("main")
+        assert len(events) == 1
+        assert events[0].event_id == "evt_legacy_1"
+        assert events[0].branch_id == 0
+    finally:
+        store.close()
+
+
+def test_is_rewindable_combat_local_events():
+    """Combat-local events are rewindable."""
+    from src.core.events import EventTypes, is_rewindable
+
+    assert is_rewindable(EventTypes.TURN_STARTED)
+    assert is_rewindable(EventTypes.ACTION_EXECUTED)
+    assert is_rewindable(EventTypes.SHIELD_BROKEN)
+    assert is_rewindable(EventTypes.BOOST_POINT_GAINED)
+    assert is_rewindable(EventTypes.CHARGE_SPENT)
+    assert is_rewindable(EventTypes.CHARGE_REGENERATED)
+    assert is_rewindable(EventTypes.ECHO_SPAWNED)
+    assert is_rewindable(EventTypes.ECHO_ACTED)
+    assert is_rewindable(EventTypes.ECHO_STONE_USED)
+
+
+def test_is_rewindable_persistent_events():
+    """Persistent events (loot/XP/combat outcomes/rewind itself) are not rewindable."""
+    from src.core.events import EventTypes, is_rewindable
+
+    assert not is_rewindable(EventTypes.GAME_START)
+    assert not is_rewindable(EventTypes.COMBAT_STARTED)
+    assert not is_rewindable(EventTypes.COMBAT_ENDED)
+    assert not is_rewindable(EventTypes.COMBATANT_DEFEATED)
+    assert not is_rewindable(EventTypes.COMBAT_FLED)
+    assert not is_rewindable(EventTypes.TEMPORAL_REWIND)
+    assert not is_rewindable(EventTypes.COUNTER_STOP_TRIGGERED)
+    assert not is_rewindable(EventTypes.PLAYER_LEVEL_UP)
+
+
+def test_is_rewindable_unknown_event_type():
+    """Unknown event types default to persistent (safe)."""
+    from src.core.events import is_rewindable
+
+    assert not is_rewindable("SomeFutureEventType")

@@ -133,7 +133,8 @@ temporal-echoes/
 |---------|-------------|
 | `just` | Show all available recipes |
 | `just install` | Install dependencies (`uv sync`) |
-| `just test` | Run test suite with coverage |
+| `just test` | Run correctness test suite with coverage (excludes benchmarks) |
+| `just bench` | Run performance benchmarks (`tests/benchmarks/bench_*.py`) |
 | `just lint` | Run ruff lint + format check + mypy (matches CI scope) |
 | `just fmt` | Auto-fix ruff lint + format |
 | `just run` | Start the game |
@@ -157,6 +158,25 @@ just test-integration
 # Run a specific test file
 uv run pytest tests/unit/test_state_machine.py -v
 ```
+
+#### Benchmarks vs tests
+
+Performance benchmarks live in `tests/benchmarks/` and are named `bench_*.py`
+(**not** `test_*.py`). This is deliberate:
+
+- They assert on **timing** (e.g. "rewind median < 16ms" for the 60 FPS frame
+  budget). Timing is environment-sensitive, so on a loaded/shared CI runner a
+  benchmark can fail for reasons unrelated to the code. Mixing them into the
+  correctness suite would make the merge gate flaky.
+- pytest's default `python_files = test_*.py` does not collect `bench_*.py`, so
+  `just test`, `just check`, and `just ci` **never** run benchmarks. Run them on
+  demand with `just bench` (which overrides `python_files` to pick up
+  `bench_*.py`).
+
+When adding a benchmark, name the file `bench_<thing>.py` and keep it in
+`tests/benchmarks/`. Do **not** rename it to `test_*` to "make it run" — that
+re-couples perf timing to the merge gate, which is the exact thing this split
+avoids.
 
 ### Linting & Type Checking
 

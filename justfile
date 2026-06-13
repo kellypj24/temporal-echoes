@@ -21,6 +21,14 @@ test-unit:
 test-integration:
     uv run pytest tests/integration/ -v
 
+# Run performance benchmarks (tests/benchmarks/bench_*.py).
+# Benchmarks are a SEPARATE concern from correctness tests: their timing
+# assertions are environment-sensitive, so they are deliberately excluded
+# from `just test` / `just check` / `just ci` to keep the merge gate stable.
+# bench_*.py is not matched by pytest's default python_files, so override it.
+bench *args:
+    uv run pytest tests/benchmarks/ -o python_files="bench_*.py" -v -s {{ args }}
+
 # Lint + type check (mirrors CI scope exactly)
 lint:
     uv run ruff check src/ tests/

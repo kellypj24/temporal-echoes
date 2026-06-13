@@ -88,6 +88,14 @@ assignments/
 - **Task Runner**: just (`just test`, `just lint`, `just run`, `just --list`)
 - **Containers**: Docker Compose (game + Ollama containers)
 - **Testing**: Pytest with >= 80% coverage
+- **Benchmarks ≠ tests**: Performance benchmarks live in `tests/benchmarks/` and
+  are named `bench_*.py` (NOT `test_*.py`). They assert on timing (e.g. rewind
+  median < 16ms for the 60 FPS budget), which is environment-sensitive. pytest's
+  default `python_files = test_*.py` does not collect them, so `just test` /
+  `just check` / `just ci` never run benchmarks — keeping the merge gate stable.
+  Run them on demand with `just bench`. **Never** rename a benchmark to `test_*`
+  to "make it run": that re-couples perf timing to the merge gate. Add new
+  benchmarks as `tests/benchmarks/bench_<thing>.py`.
 
 ## Key Patterns
 - **State Machine** with event emission for future event sourcing

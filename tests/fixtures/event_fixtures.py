@@ -10,6 +10,7 @@ def create_test_event(
     event_type: str = EventTypes.STATE_TRANSITION,
     session_id: str = "test_session",
     timeline_id: str = "test_timeline",
+    branch_id: int = 0,
     aggregate_id: str = "test_aggregate",
     aggregate_type: str = "test",
     event_data: str = '{"test": true}',
@@ -22,6 +23,7 @@ def create_test_event(
         event_type: Type of event (defaults to STATE_TRANSITION)
         session_id: Session identifier
         timeline_id: Timeline identifier
+        branch_id: Combat-local rewind branch (defaults to 0)
         aggregate_id: Aggregate identifier
         aggregate_type: Aggregate type
         event_data: JSON event data
@@ -34,6 +36,7 @@ def create_test_event(
         event_type=event_type,
         session_id=session_id,
         timeline_id=timeline_id,
+        branch_id=branch_id,
         aggregate_id=aggregate_id,
         aggregate_type=aggregate_type,
         event_data=event_data,
