@@ -20,6 +20,30 @@
 **Active work**: `assignments/active/phase-2-combat-system/`
 **Completed reference**: `assignments/completed/phase-1-core-game-loop/`
 
+## Phase 4 Direction — LangGraph for AI-DM orchestration (decided 2026-06-13)
+
+Phase 4 (AI Integration) will **evaluate LangGraph as the AI-DM orchestration
+layer with the intent to adopt it**, scoping its infrastructure to our use case
+rather than homebrewing agent orchestration from scratch. This decision should
+**drive how much we build by hand now**: prefer leaning on LangGraph's
+primitives (stateful graphs, tool-calling, checkpointing) over bespoke
+machinery wherever the two overlap.
+
+Key design tension to resolve during Phase 4 design (do not pre-decide in
+implementation): LangGraph's checkpointing / persisted state / time-travel
+overlap with our event-sourced store + timeline/rewind system (Principles 1 &
+11). The event store remains the domain source of truth; the open question is
+how LangGraph layers on top (orchestration nodes that **emit our events**)
+versus introducing a competing state store. A Phase-4 spike should A/B a
+LangGraph DM loop against native tool-use on the eval fixtures, same discipline
+as the provider spike.
+
+Context: a LangChain *provider* spike (parked branch
+`experiment/langchain-provider-eval`, see `eval/COMPARISON.md`) concluded the
+provider layer is neutral — both paths drive Ollama's `format` constrained
+decoding. The real opportunity is **orchestration (LangGraph)**, hence its
+deferral here rather than to the provider layer.
+
 ## Constitution (Non-Negotiable Principles)
 
 ### Architecture
