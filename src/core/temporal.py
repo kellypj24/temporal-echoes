@@ -191,7 +191,10 @@ class TemporalSystem:
         turns: int = 1,
     ) -> RewindResult:
         """
-        Rewind combat to a prior turn on a new branch (single-turn, Step 3).
+        Rewind combat ``turns`` turns back on a new branch.
+
+        Single-turn shipped in Step 3; multi-turn (``turns > 1``) in Step 4.
+        Each rewound turn costs 1 charge, so the charge pool bounds depth.
 
         Event ordering (see STEP-3-PLAN.md §3):
         1. Validate (charge, turns, target_turn, phase, is_over).
@@ -211,7 +214,7 @@ class TemporalSystem:
             combat: The active CombatContext to rewind.
             actor: The combatant spending charge to trigger the rewind
                 (typically the player).
-            turns: Number of turns to rewind (must be 1 for Step 3).
+            turns: Number of turns to rewind (>= 1; bounded by available charge).
 
         Returns:
             RewindResult with from_turn, to_turn, new_branch_id,
@@ -219,8 +222,6 @@ class TemporalSystem:
 
         Raises:
             ValueError: If ``turns < 1``.
-            NotImplementedError: If ``turns > 1`` (multi-turn deferred to
-                Step 4).
             InsufficientChargeError: If ``actor.temporal_charge < turns``.
             RewindBoundaryError: If the target turn would be < 0.
             RewindUnavailableError: If combat is over or in a phase that
@@ -235,8 +236,8 @@ class TemporalSystem:
         # --- Step 1: Validate ---
         if turns < 1:
             raise ValueError(f"turns must be at least 1, got {turns}")
-        if turns > 1:
-            raise NotImplementedError("multi-turn rewind lands in Step 4")
+        # Multi-turn rewind (turns > 1) is supported as of Step 4; it costs
+        # `turns` charges, so the per-combat charge cap naturally bounds depth.
 
         if actor.temporal_charge < turns:
             raise InsufficientChargeError(
@@ -558,13 +559,20 @@ class TemporalSystem:
         etype = event.event_type
 
         if etype == EventTypes.TURN_STARTED:
-            # Derive _round_number and _total_turns from TURN_STARTED events.
+            # TURN_STARTED is the canonical per-turn marker emitted by the combat
+            # loop. Reconstruct counters straight from the event: turn_number is
+            # the running total-turn count, and round_number is recorded so replay
+            # needs no turn-order arithmetic (turn_order is empty during replay).
             turn_number = data.get("turn_number", 0)
             combat._total_turns = turn_number
-            # Increment round counter when turn_index wraps to 0
-            turn_order_len = len(combat._turn_order) if combat._turn_order else 1
-            if turn_number == 1 or (turn_number > 1 and (turn_number - 1) % turn_order_len == 0):
-                combat._round_number += 1
+            if "round_number" in data:
+                combat._round_number = data["round_number"]
+            elif turn_number >= 1:
+                # Legacy fallback for events emitted before round_number was
+                # recorded (none exist in practice; kept for safety).
+                turn_order_len = len(combat._turn_order) if combat._turn_order else 1
+                if turn_number == 1 or (turn_number - 1) % turn_order_len == 0:
+                    combat._round_number += 1
 
         elif etype == EventTypes.ACTION_EXECUTED:
             action_type = data.get("action_type")

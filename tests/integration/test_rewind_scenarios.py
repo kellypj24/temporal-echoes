@@ -118,47 +118,39 @@ def _get_all_events(combat: CombatContext) -> list:
 # ============================================================================
 
 
-class TestThreeTurnsRewindOne:
-    """test_three_turns_then_rewind_one_restores_turn_two_state."""
+class TestMultiTurnRewindRestoresState:
+    """Rewinding back to an earlier captured turn restores that turn's state."""
 
-    @pytest.mark.skip(
-        reason=(
-            "Requires turn-accurate mid-combat reconstruction. _total_turns counts "
-            "every combatant turn (player + enemy), and _replay_events derives "
-            "_total_turns / _round_number solely from TURN_STARTED events, which the "
-            "combat loop does not yet emit during normal flow. Until TURN_STARTED is "
-            "wired, rewinding to a specific mid-combat turn cannot restore _total_turns "
-            "(it resets to 0) or land on the intended player-turn boundary. Same gap as "
-            "test_rewind_at_round_boundary_resets_round_counter. TODO: remove skip once "
-            "CombatContext emits TurnStarted events."
-        )
-    )
-    def test_three_turns_then_rewind_one_restores_turn_two_state(self) -> None:
+    def test_rewind_to_earlier_turn_restores_that_turns_state(self) -> None:
         """
-        After 3 player turns then a single rewind, combat state matches the
-        snapshot taken after turn 2 (HP, charge, total_turns == 2).
+        After playing further turns, rewinding back to an earlier captured turn
+        restores player HP, enemy HP, and _total_turns to that turn's snapshot —
+        across the enemy turn(s) in between (a multi-turn rewind, Step 4).
 
-        Skipped: depends on TURN_STARTED emission for turn-accurate rewind.
+        Uses a tanky enemy so the player's attacks don't end combat; the player
+        still takes enemy damage between turns, so the HP restoration is real.
         """
         player = create_test_player(temporal_charge=3, max_temporal_charge=3)
-        combat = create_combat_context(seed=42, player=player)
+        enemy = create_test_enemy(hp=5000, max_hp=5000)  # survive all the hits
+        combat = create_combat_context(seed=42, player=player, enemies=[enemy])
 
-        # Play turns 1 and 2 and snapshot after turn 2
+        # Play two player turns, snapshot, and capture the turn to return to.
         _play_n_player_turns(combat, 2, _attack())
-        snap_after_turn2 = _snapshot_combat_state(combat)
+        snap = _snapshot_combat_state(combat)
+        target_turn = combat._total_turns
 
-        # Play turn 3
+        # Play one more player turn (advances _total_turns past the snapshot).
         _play_n_player_turns(combat, 1, _attack())
+        assert combat._total_turns > target_turn  # there are turns to unwind
 
-        # Rewind 1 turn (target = total_turns - 1 = turn 2's position)
+        # Rewind back to the captured turn (turns_back > 1 → multi-turn).
         combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
-        combat.player.temporal_charge = 1  # ensure enough charge
-        combat.rewind_to_turn(combat._total_turns - 1)
+        combat.player.temporal_charge = 3  # enough charge for the unwind
+        combat.rewind_to_turn(target_turn)
 
-        # State should match end-of-turn-2 snapshot for HP and total_turns
-        assert combat.player.hp == snap_after_turn2["player_hp"]
-        assert combat._total_turns == snap_after_turn2["total_turns"]
-        for eid, hp in snap_after_turn2["enemy_hp"].items():
+        assert combat._total_turns == snap["total_turns"]
+        assert combat.player.hp == snap["player_hp"]
+        for eid, hp in snap["enemy_hp"].items():
             found = next(e for e in combat.enemies if e.id == eid)
             assert found.hp == hp
 
@@ -266,22 +258,31 @@ class TestRewindToTurnZero:
 class TestRoundBoundaryResetRoundCounter:
     """test_rewind_at_round_boundary_resets_round_counter."""
 
-    @pytest.mark.skip(
-        reason=(
-            "Requires TURN_STARTED emission from CombatContext during normal turn flow. "
-            "TURN_STARTED is handled by _apply_event but not currently emitted by the "
-            "combat loop. Will be wired in a future step. TODO: remove skip once "
-            "CombatContext emits TurnStarted events."
-        )
-    )
     def test_rewind_at_round_boundary_resets_round_counter(self) -> None:
         """
-        After rewinding mid-round-2 back to a turn in round-1, _round_number
-        should reflect round 1 (derived from TURN_STARTED event count).
-
-        Skipped: TURN_STARTED emission is not yet wired in CombatContext.
+        Rewinding from round 2 back to a turn in round 1 restores _round_number
+        to 1, reconstructed from the recorded round_number on TURN_STARTED.
         """
-        ...
+        player = create_test_player(temporal_charge=3, max_temporal_charge=3)
+        enemy = create_test_enemy(hp=5000, max_hp=5000)  # tanky: survive the hits
+        combat = create_combat_context(seed=42, player=player, enemies=[enemy])
+
+        # One player turn in round 1; capture it.
+        _play_n_player_turns(combat, 1, _attack())
+        round1_turn = combat._total_turns
+        assert combat._round_number == 1
+
+        # Another player turn crosses into round 2.
+        _play_n_player_turns(combat, 1, _attack())
+        assert combat._round_number == 2
+
+        # Rewind back to the round-1 turn.
+        combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
+        combat.player.temporal_charge = 3
+        combat.rewind_to_turn(round1_turn)
+
+        assert combat._round_number == 1
+        assert combat._total_turns == round1_turn
 
 
 class TestRewindDuringEnemyTurnWindow:

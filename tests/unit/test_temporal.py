@@ -98,13 +98,33 @@ class TestRewindValidation:
         with pytest.raises(ValueError, match="at least 1"):
             combat._temporal.rewind(combat, combat.player, turns=0)
 
-    def test_rewind_multi_turn_raises_not_implemented(self) -> None:
-        """NotImplementedError is raised for turns > 1 (deferred to Step 4)."""
-        combat = _make_rewindable_combat()
-        # Give extra charge so we don't hit insufficient-charge first
-        combat.player.temporal_charge = 3
-        with pytest.raises(NotImplementedError, match="Step 4"):
-            combat._temporal.rewind(combat, combat.player, turns=2)
+    def test_rewind_multi_turn_succeeds(self) -> None:
+        """rewind(turns=2) rewinds two turns on a new branch, costing 2 charges."""
+        from src.core.ai import CombatAction
+        from src.core.combat import CombatPhase
+        from tests.fixtures.entity_fixtures import create_test_enemy
+
+        player = create_test_player(temporal_charge=3, max_temporal_charge=3)
+        enemy = create_test_enemy(hp=5000, max_hp=5000)  # tanky: survive the hits
+        combat = create_combat_context(seed=42, player=player, enemies=[enemy])
+
+        # Drive two full combat turns (player + enemy) so _total_turns == 2.
+        combat.start_round()
+        combat.submit_player_action(CombatAction(action_type="attack", target_id="enemy_1"))
+        combat.advance_turn()
+        combat.execute_enemy_turn(combat.current_combatant)
+        combat.advance_turn()
+        assert combat._total_turns == 2
+
+        combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
+        result = combat._temporal.rewind(combat, combat.player, turns=2)
+
+        assert result.charge_spent == 2
+        assert result.from_turn == 2
+        assert result.to_turn == 0
+        assert result.new_branch_id == 1
+        # Combat is resumable (turn order rebuilt, player ready for input).
+        assert combat.phase == CombatPhase.AWAITING_PLAYER_INPUT
 
     def test_rewind_before_turn_zero_raises_boundary_error(self) -> None:
         """
