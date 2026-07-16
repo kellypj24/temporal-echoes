@@ -779,3 +779,57 @@ class CombatEventBuilder:
             branch_id=self.branch_id,
             event_data=json.dumps(event_data),
         )
+
+    def counter_stop_triggered(
+        self,
+        turn_number: int,
+        actor_id: str,
+        caster_id: str,
+        target_ability: str,
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create CounterStopTriggered event marking a successful counter.
+
+        Persistent (not rewindable — see ``events.is_rewindable``): the act
+        of countering is a historical fact that survives any later rewind,
+        same standing as TemporalRewind. It lands at the current turn and
+        branch — no branch bump of its own, unlike a successful rewind.
+
+        Args:
+            turn_number: Turn number the counter landed on.
+            actor_id: ID of the responding combatant (who countered).
+            caster_id: ID of the combatant whose cast was countered.
+            target_ability: The countered ability — "rewind" or "echo_cast".
+            **kwargs: Additional context fields.
+
+        Returns:
+            GameEvent with CounterStopTriggered type.
+
+        Example:
+            >>> event = builder.counter_stop_triggered(
+            ...     turn_number=5,
+            ...     actor_id="enemy_1",
+            ...     caster_id="player_1",
+            ...     target_ability="rewind",
+            ... )
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "actor_id": actor_id,
+            "caster_id": caster_id,
+            "target_ability": target_ability,
+        }
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.COUNTER_STOP_TRIGGERED,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
+            event_data=json.dumps(event_data),
+        )

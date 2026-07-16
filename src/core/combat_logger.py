@@ -233,6 +233,30 @@ class CombatLogger:
         self._messages.extend(msgs)
         return msgs
 
+    def log_counter_stop(
+        self,
+        responder: Combatant,
+        caster: Combatant,
+        ability: str,
+    ) -> list[str]:
+        """
+        Log a successful Counter-Stop: an announced cast fizzles.
+
+        Args:
+            responder: The combatant who countered.
+            caster: The combatant whose cast was countered.
+            ability: The countered ability — "rewind" or "echo_cast".
+
+        Returns:
+            List of formatted messages.
+        """
+        ability_label = "Rewind" if ability == "rewind" else "Echo Cast"
+        msgs = [
+            f"{responder.name} Counter-Stops {caster.name}'s {ability_label}! The cast fizzles."
+        ]
+        self._messages.extend(msgs)
+        return msgs
+
     def log_combat_end(self, outcome: str) -> list[str]:
         """
         Log the end of combat.
