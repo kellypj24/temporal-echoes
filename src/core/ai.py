@@ -41,16 +41,19 @@ class CombatAction:
     Represents an action selected by enemy AI.
 
     Attributes:
-        action_type: Type of action ("attack", "defend", "ability")
+        action_type: Type of action ("attack", "defend", "ability", "echo_cast")
         target_id: ID of the target combatant
         skill_name: Optional skill name for ability actions
         boost_points: BP to spend (always 0 for enemies in Phase 2)
+        echo_turns: Number of turns an "echo_cast" action's echo will act
+            for (1-3, default 1). Ignored by all other action types.
     """
 
     action_type: str
     target_id: str
     skill_name: str | None = None
     boost_points: int = 0
+    echo_turns: int = 1
 
 
 @dataclass
