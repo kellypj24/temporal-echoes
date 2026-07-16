@@ -21,7 +21,16 @@ from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
 from src.core.events import GameEvent
 from src.core.persistence import EventStore
-from src.core.temporal import MAX_ECHO_TURNS, Echo, EchoSourceAction, RewindResult, TemporalSystem
+from src.core.temporal import (
+    MAX_ECHO_TURNS,
+    CounterStopPolicy,
+    CounterStopResult,
+    Echo,
+    EchoCastResult,
+    EchoSourceAction,
+    RewindResult,
+    TemporalSystem,
+)
 from src.entities import Combatant, DamageType, Enemy, Player
 
 
@@ -90,6 +99,7 @@ class CombatContext:
         event_store: EventStore,
         session_id: str,
         timeline_id: str,
+        counter_policy: CounterStopPolicy | None = None,
     ) -> None:
         """
         Initialize combat context and emit COMBAT_STARTED event.
@@ -102,6 +112,10 @@ class CombatContext:
             event_store: Persistence layer for combat events.
             session_id: Current game session identifier.
             timeline_id: Current timeline branch identifier.
+            counter_policy: Decides Counter-Stop responses for both sides
+                (Phase 3 Step 6). Defaulted so existing call sites need no
+                changes; threaded through to ``TemporalSystem``, which
+                defaults it to ``NeverCounterPolicy()``.
 
         Raises:
             ValueError: If combat_id, session_id, or timeline_id is empty,
@@ -145,6 +159,7 @@ class CombatContext:
         self._temporal = TemporalSystem(
             event_store=event_store,
             event_builder=self._event_builder,
+            counter_policy=counter_policy,
         )
 
         # Combat-local rewind branch (0 = original line, increments per rewind)
@@ -370,6 +385,13 @@ class CombatContext:
         attack/defend/flee resolve (locked semantic 5: the echo does not
         act on its own cast turn, so echo_cast skips the hook).
 
+        A cast can be Counter-Stopped (Phase 3 Step 6): ``echo_cast``
+        returns a union, and either outcome still consumed the turn — you
+        committed the moment the charge was spent (Step 6 locked semantic
+        5 extends Step 5's turn-cost decision to the fizzle case). A
+        countered cast's log message was already emitted inside
+        ``_offer_counter_window``, so no further logging happens here.
+
         Args:
             action: The player's chosen combat action.
 
@@ -398,8 +420,11 @@ class CombatContext:
             msgs.extend(self._execute_flee(self.player))
             msgs.extend(self._temporal.execute_echo_turn(self, self.player))
         elif action.action_type == "echo_cast":
-            result = self._temporal.echo_cast(self, self.player, turns=action.echo_turns)
-            msgs.extend(self._logger.log_echo_spawned(self.player, result.duration))
+            cast_result = self._temporal.echo_cast(self, self.player, turns=action.echo_turns)
+            if isinstance(cast_result, EchoCastResult):
+                msgs.extend(self._logger.log_echo_spawned(self.player, cast_result.duration))
+            # CounterStopResult: _offer_counter_window already logged the
+            # fizzle via log_counter_stop — nothing further to add here.
         else:
             raise ValueError(f"Unknown action type: {action.action_type}")
 
@@ -790,13 +815,16 @@ class CombatContext:
         self,
         target_turn: int,
         actor: Combatant | None = None,
-    ) -> RewindResult:
+    ) -> RewindResult | CounterStopResult:
         """
         Rewind combat to ``target_turn`` on a new branch.
 
         Delegates to ``TemporalSystem.rewind`` after computing ``turns_back``
         from the difference between the current total turns and the requested
-        target. The player is used as the actor if none is provided.
+        target. The player is used as the actor if none is provided. Pure
+        pass-through of the counterable union (Phase 3 Step 6): a rewind can
+        be Counter-Stopped, in which case no branch bump, snapshot, or
+        replay ever happens.
 
         Args:
             target_turn: Turn number to rewind to (must be ≥ 0 and ≤
@@ -805,11 +833,13 @@ class CombatContext:
 
         Returns:
             RewindResult with from_turn, to_turn, new_branch_id,
-            events_replayed, and charge_spent.
+            events_replayed, and charge_spent — or CounterStopResult if an
+            eligible opposing combatant countered the cast.
 
         Raises:
             ValueError: If ``turns_back < 1`` (i.e. ``target_turn >=
-                _total_turns``).
+                _total_turns``), or if the configured ``CounterStopPolicy``
+                returns a combatant outside the eligible set.
             InsufficientChargeError: If the actor has insufficient charge
                 (multi-turn rewinds cost ``turns_back`` charges).
             RewindBoundaryError: If the target turn would be < 0.

@@ -5,8 +5,11 @@ Covers:
 - spend() emits CHARGE_SPENT with correct payload and mutates actor
 - regenerate() emits CHARGE_REGENERATED only when actually gained > 0
 - regenerate() does not emit when actor is at max charge
-- NotImplementedError stub for counter_stop (rewind and echo_cast are
-  implemented — see test_temporal.py / test_echo.py)
+- rewind, echo_cast, and counter_stop are all implemented as of Step 6 —
+  see test_temporal.py / test_echo.py / test_counter_stop.py. There is no
+  public counter_stop() API (Phase 3 Step 6 locked semantic 11: it only
+  exists as a response inside the Counter-Stop window), so no stub or
+  seam test remains in this file.
 """
 
 import json
@@ -192,22 +195,3 @@ class TestTemporalSystemRegenerate:
         player = create_test_player()
         with pytest.raises(ValueError, match="Charge gain amount cannot be negative"):
             system.regenerate(actor=player, amount=-1, turn_number=0)
-
-
-# ============================================================================
-# Stub tests
-# ============================================================================
-
-
-class TestTemporalSystemStubs:
-    """Tests for NotImplementedError stubs (Step 6 seam).
-
-    echo_cast() was a stub here through Step 2; it's implemented as of
-    Step 5 (see tests/unit/test_echo.py) and no longer belongs in this class.
-    """
-
-    def test_counter_stop_raises_not_implemented(self) -> None:
-        """counter_stop() raises NotImplementedError referencing Step 6."""
-        system, _, _ = make_system()
-        with pytest.raises(NotImplementedError, match="Step 6"):
-            system.counter_stop()

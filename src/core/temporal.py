@@ -8,7 +8,10 @@ Each ability step is owned by a separate implementation phase:
 - Phase 3 Step 2 (this file): resource management — spend / regenerate.
 - Phase 3 Step 3: TemporalSystem.rewind() — single-turn rewind end-to-end.
 - Phase 3 Step 5: TemporalSystem.echo_cast().
-- Phase 3 Step 6: TemporalSystem.counter_stop().
+- Phase 3 Step 6: Counter-Stop — the announce/response-window interrupt
+  model, wired into rewind() and echo_cast() via the private
+  _offer_counter_window(). There is deliberately no public "cast
+  counter-stop" API; it only exists as a response inside the window.
 
 Design constraints (see assignments/active/phase-3-timeline-mechanics/DESIGN.md):
 - DI-only: all dependencies pass through the constructor (Constitution principle 2).
@@ -23,8 +26,9 @@ import json
 import math
 import random
 from collections import defaultdict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from src.core.combat_events import CombatEventBuilder
 from src.core.events import EventTypes, GameEvent, is_rewindable
@@ -51,6 +55,9 @@ if TYPE_CHECKING:
 ECHO_CAST_COST = 2  # flat charge cost, regardless of `turns`
 ECHO_DAMAGE_SCALE = 0.5
 MAX_ECHO_TURNS = 3  # mirrors the rewind/charge cap
+
+# Counter-Stop constants (Phase 3 Step 6).
+COUNTER_STOP_COST = 3  # flat — a responder's entire pool, spent whole
 
 
 @dataclass(frozen=True)
@@ -157,6 +164,113 @@ class EchoCastResult:
     source_turns: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class TemporalAnnouncement:
+    """
+    Declares a temporal ability's cast before it resolves, opening the
+    Counter-Stop response window (DESIGN interrupt model: "the acting side
+    commits to the cast; the opposing side gets a response window").
+
+    Attributes:
+        ability: The announced ability — "rewind" or "echo_cast".
+        caster_id: ID of the combatant casting the ability.
+        magnitude: Turns rewound (rewind) or echo window N (echo_cast).
+        turn_number: Current combat turn at announcement time.
+    """
+
+    ability: str
+    caster_id: str
+    magnitude: int
+    turn_number: int
+
+
+@dataclass(frozen=True)
+class CounterStopResult:
+    """
+    Outcome payload returned when a Counter-Stop fizzles an announced cast.
+
+    Being countered is a legitimate game outcome, not an error (Phase 3
+    Step 6 locked semantic 3) — ``rewind()`` / ``echo_cast()`` return this
+    instead of their usual result dataclass. By construction time, the
+    caster's CHARGE_SPENT (for the fizzled ability), the responder's
+    CHARGE_SPENT(3, "counter_stop"), and COUNTER_STOP_TRIGGERED are all
+    persisted. The caster's charge stays spent — the ability fizzles but
+    its cost is not refunded — so there is nothing to roll back.
+
+    Attributes:
+        countered_ability: The ability that fizzled — "rewind" or "echo_cast".
+        caster_id: ID of the combatant whose cast was countered.
+        responder_id: ID of the combatant who countered.
+        caster_charge_lost: Charge the fizzled cast cost the caster (the
+            rewound turn count, or ECHO_CAST_COST for echo_cast).
+        responder_charge_spent: Charge the responder spent (always
+            COUNTER_STOP_COST).
+        turn_number: Turn number the counter landed on.
+    """
+
+    countered_ability: str
+    caster_id: str
+    responder_id: str
+    caster_charge_lost: int
+    responder_charge_spent: int
+    turn_number: int
+
+
+class CounterStopPolicy(Protocol):
+    """
+    Decides whether an eligible combatant Counter-Stops an announced cast.
+
+    One policy instance decides for **both sides** (decided 2026-07-15) —
+    the same policy answers on behalf of the player and every enemy.
+    Step 6 ships only ``NeverCounterPolicy``; Step 7 swaps in Chronomancer
+    decision weights through this same seam, with no changes required to
+    ``rewind()`` / ``echo_cast()`` / ``_offer_counter_window()``.
+    """
+
+    def decide(
+        self,
+        combat: CombatContext,
+        announcement: TemporalAnnouncement,
+        eligible: Sequence[Combatant],
+    ) -> Combatant | None:
+        """
+        Choose a responder to Counter-Stop, or decline.
+
+        Args:
+            combat: The active CombatContext.
+            announcement: The cast being announced.
+            eligible: Combatants who may respond — always non-empty; the
+                caller only invokes this once at least one candidate
+                qualifies (Phase 3 Step 6 locked semantic 7).
+
+        Returns:
+            The responding Combatant to counter with, or None to let the
+            cast proceed uncontested. Returning a combatant not present in
+            ``eligible`` is a programming error the caller raises on
+            (locked semantic 8).
+        """
+        ...
+
+
+class NeverCounterPolicy:
+    """
+    Default Counter-Stop policy: nobody ever counters.
+
+    Every existing flow is behaviorally unchanged out of the box with this
+    policy in place (Phase 3 Step 6 locked semantic 4) — all pre-Step-6
+    tests pass untouched. Step 7 swaps in Chronomancer weights.
+    """
+
+    def decide(
+        self,
+        combat: CombatContext,  # noqa: ARG002
+        announcement: TemporalAnnouncement,  # noqa: ARG002
+        eligible: Sequence[Combatant],  # noqa: ARG002
+    ) -> Combatant | None:
+        """Always decline — see class docstring."""
+        return None
+
+
 class TemporalSystem:
     """
     Orchestrates temporal charge economy and temporal abilities in combat.
@@ -170,6 +284,8 @@ class TemporalSystem:
         _event_store: Append-only event store (Constitution principle 1).
         _event_builder: Shared builder; ``set_branch`` on the builder updates
             the branch_id stamped on all subsequent events (wired in Step 3).
+        _counter_policy: Decides Counter-Stop responses for both sides
+            (Phase 3 Step 6). Defaults to ``NeverCounterPolicy``.
 
     Example:
         >>> system = TemporalSystem(event_store=store, event_builder=builder)
@@ -181,6 +297,7 @@ class TemporalSystem:
         self,
         event_store: EventStore,
         event_builder: CombatEventBuilder,
+        counter_policy: CounterStopPolicy | None = None,
     ) -> None:
         """
         Initialise TemporalSystem with injected dependencies.
@@ -189,9 +306,16 @@ class TemporalSystem:
             event_store: Append-only persistence layer for combat events.
             event_builder: Shared builder; branch_id is read from the builder
                 at emit time so rewind branch updates propagate automatically.
+            counter_policy: Decides Counter-Stop responses for both sides
+                (Phase 3 Step 6). Defaulted so existing call sites need no
+                changes; defaults to ``NeverCounterPolicy()``, which keeps
+                every pre-Step-6 flow behaviorally unchanged.
         """
         self._event_store = event_store
         self._event_builder = event_builder
+        self._counter_policy = (
+            counter_policy if counter_policy is not None else NeverCounterPolicy()
+        )
 
     # -------------------------------------------------------------------------
     # Public API — implemented in Step 2
@@ -278,26 +402,40 @@ class TemporalSystem:
         combat: CombatContext,
         actor: Combatant,
         turns: int = 1,
-    ) -> RewindResult:
+    ) -> RewindResult | CounterStopResult:
         """
         Rewind combat ``turns`` turns back on a new branch.
 
         Single-turn shipped in Step 3; multi-turn (``turns > 1``) in Step 4.
         Each rewound turn costs 1 charge, so the charge pool bounds depth.
+        Rewind is counterable (Step 6): the opposing side gets a response
+        window after the actor commits, before the replay-heavy work starts.
 
-        Event ordering (see STEP-3-PLAN.md §3):
+        Event ordering (see STEP-3-PLAN.md §3, extended by STEP-6-PLAN.md §4):
         1. Validate (charge, turns, target_turn, phase, is_over).
-        2. Snapshot rollback state (§8a).
+        2. Snapshot rollback state (§8a). Taken *before* the spend — a
+           deliberate deviation from STEP-6-PLAN.md §4's literal
+           "spend → window → snapshot" ordering: if the snapshot were taken
+           after the spend, a later *replay failure* (a distinct error path
+           from being countered) could only restore actor charge to its
+           post-spend value, not its true pre-rewind value, breaking the
+           existing replay-failure rollback contract (principle 11 / §8a).
+           A countered cast still never touches this snapshot beyond taking
+           it — it returns before restore is ever called, so nothing is
+           observably rolled back for that path either way.
         3. Emit CHARGE_SPENT at pre-rewind branch/turn — immutable historical
-           record. This event remains in the store even if replay later fails;
-           the failed-spend is washed out of charge resolution because it lives
-           on a branch that is never adopted.
+           record. This event remains in the store even if the cast is later
+           countered or replay fails; the actor's charge stays spent either
+           way (DESIGN: "the acting side commits to the cast").
         4. Decrement actor charge.
-        5. Compute and apply new_branch_id on combat + builder.
-        6. Replay events inside try/except; on failure restore snapshot and
+        5. Offer the Counter-Stop response window. Countered → return
+           CounterStopResult immediately; nothing below runs (no branch
+           bump, no replay, no TEMPORAL_REWIND).
+        6. Compute and apply new_branch_id on combat + builder.
+        7. Replay events inside try/except; on failure restore snapshot and
            raise RewindReplayError. CHARGE_SPENT stays in store (principle 11).
-        7. Emit TEMPORAL_REWIND at new branch.
-        8. Return RewindResult.
+        8. Emit TEMPORAL_REWIND at new branch.
+        9. Return RewindResult.
 
         Args:
             combat: The active CombatContext to rewind.
@@ -307,10 +445,13 @@ class TemporalSystem:
 
         Returns:
             RewindResult with from_turn, to_turn, new_branch_id,
-            events_replayed, and charge_spent.
+            events_replayed, and charge_spent — or CounterStopResult if an
+            eligible opposing combatant countered the cast (Step 6).
 
         Raises:
-            ValueError: If ``turns < 1``.
+            ValueError: If ``turns < 1``, or if the configured
+                ``CounterStopPolicy`` returns a combatant outside the
+                eligible set (a policy programming error).
             InsufficientChargeError: If ``actor.temporal_charge < turns``.
             RewindBoundaryError: If the target turn would be < 0.
             RewindUnavailableError: If combat is over or in a phase that
@@ -357,6 +498,14 @@ class TemporalSystem:
         from_turn = combat._total_turns
 
         # --- Step 2: Snapshot rollback state ---
+        # Taken before the spend (not after — see deviation note on this
+        # method's docstring): a countered cast returns before this snapshot
+        # is ever acted upon (never restored-from), so taking it here costs
+        # nothing observable; taking it after the spend would mean a later
+        # *replay failure* (a distinct, non-counter error path) could only
+        # restore actor charge back to its post-spend value, not its true
+        # pre-rewind value — breaking the existing replay-failure rollback
+        # contract (Constitution principle 11 / STEP-3-PLAN §8a).
         snapshot = self._snapshot_rollback_state(combat, actor)
 
         # --- Step 3: Emit CHARGE_SPENT at pre-rewind branch/turn ---
@@ -371,10 +520,19 @@ class TemporalSystem:
         # --- Step 4: Decrement actor charge ---
         actor.spend_charge(turns)
 
-        # --- Step 5: Compute new branch ---
-        new_branch_id = combat._current_branch_id + 1
+        # --- Step 5: Offer the Counter-Stop response window ---
+        counter_result = self._offer_counter_window(
+            combat,
+            caster=actor,
+            ability="rewind",
+            magnitude=turns,
+            caster_charge_lost=turns,
+        )
+        if counter_result is not None:
+            return counter_result
 
-        # --- Step 6: Bump branch on combat and builder ---
+        # --- Step 6: Compute and apply new branch ---
+        new_branch_id = combat._current_branch_id + 1
         combat._current_branch_id = new_branch_id
         combat._event_builder.set_branch(new_branch_id)
 
@@ -413,7 +571,7 @@ class TemporalSystem:
         combat: CombatContext,
         actor: Combatant,
         turns: int = 1,
-    ) -> EchoCastResult:
+    ) -> EchoCastResult | CounterStopResult:
         """
         Cast an Echo: a past-self replays the actor's last ``turns`` actions.
 
@@ -422,17 +580,23 @@ class TemporalSystem:
         same as ``_execute_attack``. No phase validation is performed here;
         the player path is phase-gated by the dispatcher, and enemy casts
         (driven manually until the Chronomancer AI lands in Step 7) run
-        inside EXECUTING_TURN too.
+        inside EXECUTING_TURN too. Echo Cast is counterable (Step 6): the
+        opposing side gets a response window after the actor commits,
+        before the Echo is built.
 
-        Event flow on success (see STEP-5-PLAN.md §3):
+        Event flow on success (see STEP-5-PLAN.md §3, extended by
+        STEP-6-PLAN.md §4):
         1. Validate (below) — no events, no mutation on any error path.
         2. Capture the source window from ``combat._action_history``.
         3. Emit CHARGE_SPENT.
         4. ``actor.spend_charge(ECHO_CAST_COST)``.
-        5. Build the Echo with a deterministic ``echo_id``; register it in
+        5. Offer the Counter-Stop response window. Countered → return
+           CounterStopResult immediately; no Echo is built or registered,
+           no ECHO_SPAWNED is emitted.
+        6. Build the Echo with a deterministic ``echo_id``; register it in
            ``combat._active_echoes[side]``.
-        6. Emit ECHO_SPAWNED with the source window embedded in the payload.
-        7. Return EchoCastResult.
+        7. Emit ECHO_SPAWNED with the source window embedded in the payload.
+        8. Return EchoCastResult.
 
         No ACTION_EXECUTED is emitted for the cast turn — the turn's
         record is TURN_STARTED -> CHARGE_SPENT -> ECHO_SPAWNED. This also
@@ -448,10 +612,14 @@ class TemporalSystem:
                 default 1). Cost is a flat ECHO_CAST_COST regardless of N.
 
         Returns:
-            EchoCastResult describing the newly spawned echo.
+            EchoCastResult describing the newly spawned echo, or
+            CounterStopResult if an eligible opposing combatant countered
+            the cast (Step 6).
 
         Raises:
-            ValueError: If ``turns < 1`` or ``turns > MAX_ECHO_TURNS``.
+            ValueError: If ``turns < 1`` or ``turns > MAX_ECHO_TURNS``, or
+                if the configured ``CounterStopPolicy`` returns a combatant
+                outside the eligible set (a policy programming error).
             InsufficientChargeError: If ``actor.temporal_charge <
                 ECHO_CAST_COST``.
             EchoHistoryError: If the actor has fewer than ``turns``
@@ -505,6 +673,17 @@ class TemporalSystem:
         )
         self._event_store.append_event(charge_event)
         actor.spend_charge(ECHO_CAST_COST)
+
+        # --- Offer the Counter-Stop response window ---
+        counter_result = self._offer_counter_window(
+            combat,
+            caster=actor,
+            ability="echo_cast",
+            magnitude=turns,
+            caster_charge_lost=ECHO_CAST_COST,
+        )
+        if counter_result is not None:
+            return counter_result
 
         # --- Build Echo, register, emit ECHO_SPAWNED ---
         echo_id = f"echo_{actor.id}_t{turn_number}"
@@ -757,6 +936,121 @@ class TemporalSystem:
             return False
         owner = self._find_combatant(combat, echo.owner_id)
         return owner.is_alive
+
+    # -------------------------------------------------------------------------
+    # Counter-Stop — implemented in Step 6
+    # -------------------------------------------------------------------------
+
+    def _offer_counter_window(
+        self,
+        combat: CombatContext,
+        caster: Combatant,
+        ability: str,
+        magnitude: int,
+        caster_charge_lost: int,
+    ) -> CounterStopResult | None:
+        """
+        Offer the opposing side a chance to Counter-Stop an announced cast.
+
+        Called by ``rewind()`` / ``echo_cast()`` after the caster has
+        already committed (CHARGE_SPENT emitted and deducted) but before
+        any further work happens — a countered cast leaves nothing else to
+        undo (Phase 3 Step 6 locked semantic 5).
+
+        Args:
+            combat: The active CombatContext.
+            caster: The combatant whose cast is being announced.
+            ability: "rewind" or "echo_cast".
+            magnitude: Turns rewound (rewind) or echo window N (echo_cast).
+            caster_charge_lost: Charge the caster already spent on this
+                cast — embedded in the result if countered.
+
+        Returns:
+            CounterStopResult if an eligible responder countered, else
+            None (the cast proceeds).
+
+        Raises:
+            ValueError: If the configured ``CounterStopPolicy`` returns a
+                combatant not present in the eligible list.
+        """
+        eligible = self._eligible_responders(combat, caster)
+        if not eligible:
+            # No eligible responder: the window is skipped entirely and the
+            # policy is never called (locked semantic 7 — zero overhead on
+            # the common path, and policies never see empty choices).
+            return None
+
+        turn_number = combat._total_turns
+        announcement = TemporalAnnouncement(
+            ability=ability,
+            caster_id=caster.id,
+            magnitude=magnitude,
+            turn_number=turn_number,
+        )
+        responder = self._counter_policy.decide(combat, announcement, eligible)
+        if responder is None:
+            return None
+
+        if not any(responder.id == candidate.id for candidate in eligible):
+            raise ValueError(
+                f"CounterStopPolicy returned a combatant not in the eligible list: {responder.id!r}"
+            )
+
+        # --- Emit responder CHARGE_SPENT, then deduct ---
+        charge_event = self._event_builder.charge_spent(
+            turn_number=turn_number,
+            actor_id=responder.id,
+            amount=COUNTER_STOP_COST,
+            ability="counter_stop",
+        )
+        self._event_store.append_event(charge_event)
+        responder.spend_charge(COUNTER_STOP_COST)
+
+        # --- Emit COUNTER_STOP_TRIGGERED (persistent) ---
+        trigger_event = self._event_builder.counter_stop_triggered(
+            turn_number=turn_number,
+            actor_id=responder.id,
+            caster_id=caster.id,
+            target_ability=ability,
+        )
+        self._event_store.append_event(trigger_event)
+
+        combat._logger.log_counter_stop(responder, caster, ability)
+
+        return CounterStopResult(
+            countered_ability=ability,
+            caster_id=caster.id,
+            responder_id=responder.id,
+            caster_charge_lost=caster_charge_lost,
+            responder_charge_spent=COUNTER_STOP_COST,
+            turn_number=turn_number,
+        )
+
+    def _eligible_responders(
+        self,
+        combat: CombatContext,
+        caster: Combatant,
+    ) -> list[Combatant]:
+        """
+        Build the deterministic list of combatants eligible to Counter-Stop.
+
+        Eligible = living combatants on the *opposing* side with
+        ``temporal_charge >= COUNTER_STOP_COST`` (locked semantic 7).
+        Enemy side order is ``combat.living_enemies`` list order; the
+        player side is just the player.
+
+        Args:
+            combat: The active CombatContext.
+            caster: The combatant whose cast is being announced.
+
+        Returns:
+            Eligible responders in deterministic order (possibly empty).
+        """
+        if isinstance(caster, Player):
+            candidates: list[Combatant] = list(combat.living_enemies)
+        else:
+            candidates = [combat.player] if combat.player.is_alive else []
+        return [c for c in candidates if c.temporal_charge >= COUNTER_STOP_COST]
 
     # -------------------------------------------------------------------------
     # Private helpers
@@ -1211,18 +1505,3 @@ class TemporalSystem:
             if enemy.id == combatant_id:
                 return enemy
         raise ValueError(f"Combatant not found in combat: {combatant_id!r}")
-
-    # -------------------------------------------------------------------------
-    # Stubs — implemented in later steps
-    # -------------------------------------------------------------------------
-
-    def counter_stop(self, *args: object, **kwargs: object) -> object:
-        """
-        Interrupt an opponent's declared temporal ability.
-
-        Not yet implemented. Counter-Stop lands in Phase 3 Step 6.
-
-        Raises:
-            NotImplementedError: Always — implementation pending Step 6.
-        """
-        raise NotImplementedError("Phase 3 Step 6")
