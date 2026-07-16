@@ -685,8 +685,26 @@ class CombatContext:
         raise ValueError(f"No combatant found with id: {combatant_id}")
 
     def _set_phase_for_current_combatant(self) -> None:
-        """Set the combat phase based on whether current combatant is player or enemy."""
+        """Begin the current combatant's turn: emit TURN_STARTED, then set the phase.
+
+        TURN_STARTED is the canonical per-turn marker the rewind replay uses to
+        reconstruct ``_total_turns`` and ``_round_number`` (see
+        ``TemporalSystem._apply_event``). ``turn_number`` is the turn about to be
+        taken — ``_total_turns`` is incremented by the action method that follows
+        (``submit_player_action`` / ``execute_enemy_turn``) — and ``round_number``
+        is recorded so replay needs no turn-order arithmetic.
+
+        This is the single choke point reached at every turn boundary (from
+        ``start_round`` and ``advance_turn``), so emitting here covers all turns.
+        """
         current = self._turn_order[self._turn_index]
+        self._emit_event(
+            self._event_builder.turn_started(
+                turn_number=self._total_turns + 1,
+                active_combatant_id=current.id,
+                round_number=self._round_number,
+            )
+        )
         if isinstance(current, Player):
             self._phase = CombatPhase.AWAITING_PLAYER_INPUT
         else:
@@ -716,8 +734,8 @@ class CombatContext:
         Raises:
             ValueError: If ``turns_back < 1`` (i.e. ``target_turn >=
                 _total_turns``).
-            NotImplementedError: If ``turns_back > 1`` (Step 4 scope).
-            InsufficientChargeError: If the actor has insufficient charge.
+            InsufficientChargeError: If the actor has insufficient charge
+                (multi-turn rewinds cost ``turns_back`` charges).
             RewindBoundaryError: If the target turn would be < 0.
             RewindUnavailableError: If combat phase forbids rewind.
             RewindReplayError: If event replay fails mid-flight.

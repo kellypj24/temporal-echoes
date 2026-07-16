@@ -199,17 +199,7 @@ class TestTemporalSystemRegenerate:
 
 
 class TestTemporalSystemStubs:
-    """Tests for NotImplementedError stubs (Step 3–6 seams)."""
-
-    def test_rewind_multi_turn_raises_not_implemented(self) -> None:
-        """rewind(turns=2) raises NotImplementedError for multi-turn (Step 4 scope)."""
-        from tests.fixtures.combat_fixtures import create_combat_context
-
-        combat = create_combat_context()
-        combat.start_round()
-        system, _, _ = make_system()
-        with pytest.raises(NotImplementedError, match="Step 4"):
-            system.rewind(combat, combat.player, turns=2)
+    """Tests for NotImplementedError stubs (Step 5–6 seams)."""
 
     def test_echo_cast_raises_not_implemented(self) -> None:
         """echo_cast() raises NotImplementedError referencing Step 5."""
