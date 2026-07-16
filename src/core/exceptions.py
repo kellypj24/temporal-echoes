@@ -132,3 +132,39 @@ class RewindReplayError(TemporalError):
     """
 
     pass
+
+
+class EchoHistoryError(TemporalError):
+    """
+    Raised when the owner has fewer recorded actions than the requested echo duration.
+
+    Echo Cast draws its source window from the owner's last ``turns``
+    executed actions (``CombatContext._action_history``); if fewer exist,
+    there is nothing to embed in the ``ECHO_SPAWNED`` payload. No event is
+    emitted; no state is mutated.
+    """
+
+    pass
+
+
+class EchoAlreadyActiveError(TemporalError):
+    """
+    Raised when the actor's side already has a live echo.
+
+    Max 1 active echo per side (DESIGN M1 constraint). An echo counts as
+    "live" unless it has expired (all source actions replayed) or its
+    owner is dead (inert — Phase 3 Step 5 locked semantic 9). No event is
+    emitted; no state is mutated.
+    """
+
+    pass
+
+
+class EchoUnavailableError(TemporalError):
+    """
+    Raised when Echo Cast is invoked after combat has already ended.
+
+    No event is emitted; no state is mutated.
+    """
+
+    pass

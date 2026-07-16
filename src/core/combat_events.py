@@ -643,3 +643,139 @@ class CombatEventBuilder:
             branch_id=branch_id,
             event_data=json.dumps(event_data),
         )
+
+    def echo_spawned(
+        self,
+        turn_number: int,
+        echo_id: str,
+        owner_id: str,
+        duration: int,
+        damage_scale: float,
+        source_actions: list[dict],
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create EchoSpawned event marking a successful Echo Cast.
+
+        The owner's source action window is embedded directly in the
+        payload so rewind replay can reconstruct the Echo from this one
+        event, with no query against prior ACTION_EXECUTED rows (see
+        Phase 3 Step 5 plan §3 — that query problem is exactly what Step 4
+        deferred; embedding sidesteps it entirely).
+
+        Args:
+            turn_number: Turn number at which the echo was cast.
+            echo_id: Deterministic echo identifier
+                (``f"echo_{owner_id}_t{cast_turn}"``, no UUIDs).
+            owner_id: ID of the combatant who cast the echo.
+            duration: Number of turns the echo will act (1-3).
+            damage_scale: Fraction of recorded damage the echo deals (0.5).
+            source_actions: Embedded source window, chronological order
+                (most recent last). Each entry is a dict with keys
+                source_turn, action_type, target_id, damage_dealt.
+            **kwargs: Additional context fields.
+
+        Returns:
+            GameEvent with EchoSpawned type.
+
+        Example:
+            >>> event = builder.echo_spawned(
+            ...     turn_number=5,
+            ...     echo_id="echo_player_1_t5",
+            ...     owner_id="player_1",
+            ...     duration=2,
+            ...     damage_scale=0.5,
+            ...     source_actions=[
+            ...         {"source_turn": 3, "action_type": "attack",
+            ...          "target_id": "enemy_1", "damage_dealt": 40},
+            ...     ],
+            ... )
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "echo_id": echo_id,
+            "owner_id": owner_id,
+            "duration": duration,
+            "damage_scale": damage_scale,
+            "source_actions": source_actions,
+        }
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.ECHO_SPAWNED,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
+            event_data=json.dumps(event_data),
+        )
+
+    def echo_acted(
+        self,
+        turn_number: int,
+        echo_id: str,
+        owner_id: str,
+        action_type: str,
+        target_id: str | None,
+        damage_dealt: int | None,
+        source_turn: int,
+        **kwargs: Any,
+    ) -> GameEvent:
+        """
+        Create EchoActed event for one act of a live echo.
+
+        Args:
+            turn_number: Turn number at which the echo acted (the owner's
+                just-executed turn).
+            echo_id: The acting echo's identifier.
+            owner_id: ID of the echo's owner.
+            action_type: "attack", "defend", or "fizzle".
+            target_id: Resolved target ID (attack only — retargeting, if
+                any, has already been applied), else None.
+            damage_dealt: Scaled damage dealt (attack only), else None.
+            source_turn: Turn number of the source action being replayed.
+            **kwargs: Additional context fields.
+
+        Returns:
+            GameEvent with EchoActed type.
+
+        Example:
+            >>> event = builder.echo_acted(
+            ...     turn_number=6,
+            ...     echo_id="echo_player_1_t5",
+            ...     owner_id="player_1",
+            ...     action_type="attack",
+            ...     target_id="enemy_1",
+            ...     damage_dealt=20,
+            ...     source_turn=3,
+            ... )
+        """
+        event_data = {
+            "combat_id": self.combat_id,
+            "turn_number": turn_number,
+            "echo_id": echo_id,
+            "owner_id": owner_id,
+            "action_type": action_type,
+            "source_turn": source_turn,
+        }
+
+        if target_id is not None:
+            event_data["target_id"] = target_id
+
+        if damage_dealt is not None:
+            event_data["damage_dealt"] = damage_dealt
+
+        event_data.update(kwargs)
+
+        return GameEvent(
+            event_type=EventTypes.ECHO_ACTED,
+            aggregate_id=self.combat_id,
+            aggregate_type="combat",
+            session_id=self.session_id,
+            timeline_id=self.timeline_id,
+            branch_id=self.branch_id,
+            event_data=json.dumps(event_data),
+        )

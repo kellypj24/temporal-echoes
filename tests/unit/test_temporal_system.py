@@ -5,7 +5,8 @@ Covers:
 - spend() emits CHARGE_SPENT with correct payload and mutates actor
 - regenerate() emits CHARGE_REGENERATED only when actually gained > 0
 - regenerate() does not emit when actor is at max charge
-- NotImplementedError stubs for rewind / echo_cast / counter_stop
+- NotImplementedError stub for counter_stop (rewind and echo_cast are
+  implemented — see test_temporal.py / test_echo.py)
 """
 
 import json
@@ -199,13 +200,11 @@ class TestTemporalSystemRegenerate:
 
 
 class TestTemporalSystemStubs:
-    """Tests for NotImplementedError stubs (Step 5–6 seams)."""
+    """Tests for NotImplementedError stubs (Step 6 seam).
 
-    def test_echo_cast_raises_not_implemented(self) -> None:
-        """echo_cast() raises NotImplementedError referencing Step 5."""
-        system, _, _ = make_system()
-        with pytest.raises(NotImplementedError, match="Step 5"):
-            system.echo_cast()
+    echo_cast() was a stub here through Step 2; it's implemented as of
+    Step 5 (see tests/unit/test_echo.py) and no longer belongs in this class.
+    """
 
     def test_counter_stop_raises_not_implemented(self) -> None:
         """counter_stop() raises NotImplementedError referencing Step 6."""

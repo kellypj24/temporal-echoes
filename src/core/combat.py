@@ -12,6 +12,7 @@ Related Decisions: DEC-2001 through DEC-2006
 from __future__ import annotations
 
 import random
+from collections import defaultdict, deque
 from enum import Enum, auto
 
 from src.core.ai import AIArchetype, CombatAction, CombatState, EnemyAI, create_enemy_ai
@@ -20,7 +21,7 @@ from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
 from src.core.events import GameEvent
 from src.core.persistence import EventStore
-from src.core.temporal import RewindResult, TemporalSystem
+from src.core.temporal import MAX_ECHO_TURNS, Echo, EchoSourceAction, RewindResult, TemporalSystem
 from src.entities import Combatant, DamageType, Enemy, Player
 
 
@@ -149,6 +150,17 @@ class CombatContext:
         # Combat-local rewind branch (0 = original line, increments per rewind)
         self._current_branch_id: int = 0
 
+        # Echo Cast state (Phase 3 Step 5). Both are read models rebuilt
+        # from events on rewind replay (TemporalSystem._apply_event /
+        # _replay_events) — same standing as HP, not parallel state.
+        # _action_history: per-combatant window of their last MAX_ECHO_TURNS
+        # executed actions, appended to by _execute_attack/_defend/_flee.
+        # _active_echoes: at most one live echo per side ("player"/"enemy").
+        self._action_history: defaultdict[str, deque[EchoSourceAction]] = defaultdict(
+            lambda: deque(maxlen=MAX_ECHO_TURNS)
+        )
+        self._active_echoes: dict[str, Echo] = {}
+
         # Combat state
         self._phase = CombatPhase.INITIALIZING
         self._outcome: CombatOutcome | None = None
@@ -234,6 +246,22 @@ class CombatContext:
     def log_messages(self) -> list[str]:
         """Return all accumulated combat log messages."""
         return self._logger.messages
+
+    def _side_of(self, combatant: Combatant) -> str:
+        """
+        Return which side a combatant belongs to ("player" or "enemy").
+
+        Keys ``_active_echoes`` — Echo Cast is capped at one live echo per
+        side (DESIGN M1 constraint), where "player" and "enemy" are the two
+        sides regardless of how many enemies are in the encounter.
+
+        Args:
+            combatant: The combatant to classify.
+
+        Returns:
+            "player" if the combatant is the player, else "enemy".
+        """
+        return "player" if isinstance(combatant, Player) else "enemy"
 
     @property
     def temporal_system(self) -> TemporalSystem:
@@ -336,6 +364,12 @@ class CombatContext:
         """
         Submit and execute the player's action.
 
+        "echo_cast" consumes the player's turn like any other action type
+        (Phase 3 Step 5 locked semantic 1) — it rides these same rails
+        rather than a separate entry point. The echo hook runs after
+        attack/defend/flee resolve (locked semantic 5: the echo does not
+        act on its own cast turn, so echo_cast skips the hook).
+
         Args:
             action: The player's chosen combat action.
 
@@ -356,10 +390,16 @@ class CombatContext:
         if action.action_type == "attack":
             target = self._find_combatant(action.target_id)
             msgs.extend(self._execute_attack(self.player, target, action))
+            msgs.extend(self._temporal.execute_echo_turn(self, self.player))
         elif action.action_type == "defend":
             msgs.extend(self._execute_defend(self.player))
+            msgs.extend(self._temporal.execute_echo_turn(self, self.player))
         elif action.action_type == "flee":
             msgs.extend(self._execute_flee(self.player))
+            msgs.extend(self._temporal.execute_echo_turn(self, self.player))
+        elif action.action_type == "echo_cast":
+            result = self._temporal.echo_cast(self, self.player, turns=action.echo_turns)
+            msgs.extend(self._logger.log_echo_spawned(self.player, result.duration))
         else:
             raise ValueError(f"Unknown action type: {action.action_type}")
 
@@ -369,7 +409,10 @@ class CombatContext:
         """
         Execute an enemy's turn (get AI action and execute it).
 
-        Broken enemies skip their turn.
+        Broken enemies skip their turn — but their echo still acts (Phase 3
+        Step 5 locked semantic 10: an echo is a temporal entity independent
+        of its owner's present state), so the echo hook runs on both the
+        broken-skip path and the normal path.
 
         Args:
             enemy: The enemy whose turn it is.
@@ -385,6 +428,7 @@ class CombatContext:
         if enemy.is_broken:
             msgs.append(f"{enemy.name} is stunned and cannot act!")
             self._logger._messages.append(f"{enemy.name} is stunned and cannot act!")
+            msgs.extend(self._temporal.execute_echo_turn(self, enemy))
             return msgs
 
         action = self.get_enemy_action(enemy)
@@ -398,6 +442,8 @@ class CombatContext:
             msgs.extend(self._execute_attack(enemy, self.player, action))
         else:
             msgs.extend(self._execute_defend(enemy))
+
+        msgs.extend(self._temporal.execute_echo_turn(self, enemy))
 
         return msgs
 
@@ -540,6 +586,16 @@ class CombatContext:
                 )
             )
 
+        # Record this action in the actor's echo source window (Step 5).
+        self._action_history[actor.id].append(
+            EchoSourceAction(
+                source_turn=self._total_turns,
+                action_type="attack",
+                target_id=target.id,
+                damage_dealt=damage_result.damage,
+            )
+        )
+
         return msgs
 
     def _execute_defend(self, actor: Combatant) -> list[str]:
@@ -559,6 +615,16 @@ class CombatContext:
                 turn_number=self._total_turns,
                 actor_id=actor.id,
                 action_type="defend",
+            )
+        )
+
+        # Record this action in the actor's echo source window (Step 5).
+        self._action_history[actor.id].append(
+            EchoSourceAction(
+                source_turn=self._total_turns,
+                action_type="defend",
+                target_id=None,
+                damage_dealt=None,
             )
         )
 
@@ -612,6 +678,16 @@ class CombatContext:
                     total_turns=self._total_turns,
                 )
             )
+
+        # Record this action in the actor's echo source window (Step 5).
+        self._action_history[actor.id].append(
+            EchoSourceAction(
+                source_turn=self._total_turns,
+                action_type="flee",
+                target_id=None,
+                damage_dealt=None,
+            )
+        )
 
         return msgs
 

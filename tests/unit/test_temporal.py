@@ -387,3 +387,70 @@ class TestRewindRollback:
 
         rng_state_after = combat._rng.getstate()
         assert rng_state_after == rng_state_before, "RNG state must be restored after failed replay"
+
+
+class TestRewindRollbackEchoState:
+    """Rollback contract (§8a) extended for echo + action-history state (Step 5)."""
+
+    def test_rewind_replay_failure_restores_active_echoes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        When _apply_event raises during replay, _active_echoes is restored
+        to its pre-rewind snapshot (same echo_id, owner_id, next_index,
+        source_actions).
+        """
+        from src.core.temporal import Echo, EchoSourceAction
+
+        combat = _make_rewindable_combat(temporal_charge=3)
+        combat._active_echoes["player"] = Echo(
+            echo_id="echo_player_1_t1",
+            owner_id=combat.player.id,
+            source_actions=(
+                EchoSourceAction(
+                    source_turn=1, action_type="attack", target_id="enemy_1", damage_dealt=100
+                ),
+            ),
+            next_index=0,
+        )
+        echo_before = combat._active_echoes["player"]
+
+        def _fail_apply(c: object, e: object) -> None:
+            raise RuntimeError("injected replay failure")
+
+        monkeypatch.setattr(combat._temporal, "_apply_event", _fail_apply)
+
+        with pytest.raises(RewindReplayError):
+            combat._temporal.rewind(combat, combat.player, turns=1)
+
+        echo_after = combat._active_echoes["player"]
+        assert echo_after.echo_id == echo_before.echo_id
+        assert echo_after.owner_id == echo_before.owner_id
+        assert echo_after.next_index == echo_before.next_index
+        assert echo_after.source_actions == echo_before.source_actions
+
+    def test_rewind_replay_failure_restores_action_history(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        When _apply_event raises during replay, _action_history is restored
+        to its pre-rewind snapshot (same recorded entries, same order).
+        """
+        combat = _make_rewindable_combat(temporal_charge=3)
+        history_before = {
+            combatant_id: list(history) for combatant_id, history in combat._action_history.items()
+        }
+        assert history_before, "setup attack should have recorded a history entry"
+
+        def _fail_apply(c: object, e: object) -> None:
+            raise RuntimeError("injected replay failure")
+
+        monkeypatch.setattr(combat._temporal, "_apply_event", _fail_apply)
+
+        with pytest.raises(RewindReplayError):
+            combat._temporal.rewind(combat, combat.player, turns=1)
+
+        history_after = {
+            combatant_id: list(history) for combatant_id, history in combat._action_history.items()
+        }
+        assert history_after == history_before

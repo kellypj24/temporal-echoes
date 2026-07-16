@@ -190,6 +190,49 @@ class CombatLogger:
         self._messages.extend(msgs)
         return msgs
 
+    def log_echo_spawned(self, owner: Combatant, duration: int) -> list[str]:
+        """
+        Log a successful Echo Cast.
+
+        Args:
+            owner: The combatant who cast the echo.
+            duration: Number of turns the echo will act.
+
+        Returns:
+            List of formatted messages.
+        """
+        msgs = [f"{owner.name} casts Echo! A past-self will act for {duration} turn(s)."]
+        self._messages.extend(msgs)
+        return msgs
+
+    def log_echo_acted(
+        self,
+        owner: Combatant,
+        action_type: str,
+        target: Combatant | None,
+        damage: int | None,
+    ) -> list[str]:
+        """
+        Log one act of an owner's echo.
+
+        Args:
+            owner: The echo's owner (the echo is described as "owner's echo").
+            action_type: "attack", "defend", or "fizzle".
+            target: The struck combatant (attack only), else None.
+            damage: Damage dealt (attack only), else None.
+
+        Returns:
+            List of formatted messages.
+        """
+        if action_type == "attack" and target is not None and damage is not None:
+            msgs = [f"{owner.name}'s echo attacks {target.name} for {damage} damage!"]
+        elif action_type == "defend":
+            msgs = [f"{owner.name}'s echo takes a defensive stance."]
+        else:
+            msgs = [f"{owner.name}'s echo fizzles, unable to act."]
+        self._messages.extend(msgs)
+        return msgs
+
     def log_combat_end(self, outcome: str) -> list[str]:
         """
         Log the end of combat.

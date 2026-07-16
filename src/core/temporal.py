@@ -20,13 +20,18 @@ Design constraints (see assignments/active/phase-3-timeline-mechanics/DESIGN.md)
 from __future__ import annotations
 
 import json
+import math
 import random
-from dataclasses import dataclass
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from src.core.combat_events import CombatEventBuilder
 from src.core.events import EventTypes, GameEvent, is_rewindable
 from src.core.exceptions import (
+    EchoAlreadyActiveError,
+    EchoHistoryError,
+    EchoUnavailableError,
     InsufficientChargeError,
     RewindBoundaryError,
     RewindReplayError,
@@ -34,11 +39,18 @@ from src.core.exceptions import (
 )
 from src.core.persistence import EventStore
 from src.entities.combatant import Combatant
+from src.entities.damage_types import DamageType
 from src.entities.enemy import Enemy
 from src.entities.player import Player
 
 if TYPE_CHECKING:
     from src.core.combat import CombatContext
+
+# Echo Cast constants (Phase 3 Step 5). Named so tuning is one line — see
+# DESIGN.md Open Question 1 (flat 0.5 scale vs. scaling by N or recency).
+ECHO_CAST_COST = 2  # flat charge cost, regardless of `turns`
+ECHO_DAMAGE_SCALE = 0.5
+MAX_ECHO_TURNS = 3  # mirrors the rewind/charge cap
 
 
 @dataclass(frozen=True)
@@ -66,6 +78,83 @@ class RewindResult:
     new_branch_id: int
     events_replayed: int
     charge_spent: int
+
+
+@dataclass(frozen=True)
+class EchoSourceAction:
+    """
+    One action from the owner's history, embedded in an Echo for replay.
+
+    Captured from ``CombatContext._action_history`` at cast time and
+    embedded directly in the ``ECHO_SPAWNED`` payload, so rewind replay
+    reconstructs the Echo from that one event with no query against prior
+    ACTION_EXECUTED rows (see Phase 3 Step 5 plan §3).
+
+    Attributes:
+        source_turn: Turn number the original action was executed on.
+        action_type: "attack", "defend", or "flee".
+        target_id: Original target ID (attack only), else None.
+        damage_dealt: Original recorded damage (attack only), else None.
+    """
+
+    source_turn: int
+    action_type: str
+    target_id: str | None
+    damage_dealt: int | None
+
+
+@dataclass
+class Echo:
+    """
+    A past-self echo that replays an owner's recent actions at reduced damage.
+
+    Not frozen: ``next_index`` mutates as the echo acts on each of its
+    owner's subsequent turns until ``is_expired``.
+
+    Attributes:
+        echo_id: Deterministic identifier (``f"echo_{owner_id}_t{cast_turn}"``,
+            no UUIDs — required for the event-log-hash determinism test).
+        owner_id: ID of the combatant who cast the echo.
+        source_actions: Embedded source window, chronological order (most
+            recent last).
+        next_index: Index into ``source_actions`` of the next act.
+    """
+
+    echo_id: str
+    owner_id: str
+    source_actions: tuple[EchoSourceAction, ...]
+    next_index: int = field(default=0)
+
+    @property
+    def is_expired(self) -> bool:
+        """Whether the echo has replayed all of its source actions."""
+        return self.next_index >= len(self.source_actions)
+
+
+@dataclass(frozen=True)
+class EchoCastResult:
+    """
+    Outcome payload returned from a successful ``TemporalSystem.echo_cast`` call.
+
+    By the time this is constructed, CHARGE_SPENT and ECHO_SPAWNED are
+    already persisted and the echo is registered in
+    ``combat._active_echoes``. Failed casts raise an exception instead of
+    returning this dataclass.
+
+    Attributes:
+        echo_id: The newly spawned echo's deterministic identifier.
+        owner_id: ID of the combatant who cast the echo.
+        duration: Number of turns the echo will act (1-3).
+        charge_spent: Charge debited from the actor (always ECHO_CAST_COST).
+        source_turns: Turn numbers of the embedded source actions, in the
+            same chronological order they will replay in.
+    """
+
+    echo_id: str
+    owner_id: str
+    duration: int
+    charge_spent: int
+    source_turns: tuple[int, ...]
 
 
 class TemporalSystem:
@@ -316,6 +405,360 @@ class TemporalSystem:
         )
 
     # -------------------------------------------------------------------------
+    # Echo Cast — implemented in Step 5
+    # -------------------------------------------------------------------------
+
+    def echo_cast(
+        self,
+        combat: CombatContext,
+        actor: Combatant,
+        turns: int = 1,
+    ) -> EchoCastResult:
+        """
+        Cast an Echo: a past-self replays the actor's last ``turns`` actions.
+
+        Casting consumes the actor's turn (Phase 3 Step 5 locked semantic
+        1) — this method rides ``submit_player_action``'s existing rails,
+        same as ``_execute_attack``. No phase validation is performed here;
+        the player path is phase-gated by the dispatcher, and enemy casts
+        (driven manually until the Chronomancer AI lands in Step 7) run
+        inside EXECUTING_TURN too.
+
+        Event flow on success (see STEP-5-PLAN.md §3):
+        1. Validate (below) — no events, no mutation on any error path.
+        2. Capture the source window from ``combat._action_history``.
+        3. Emit CHARGE_SPENT.
+        4. ``actor.spend_charge(ECHO_CAST_COST)``.
+        5. Build the Echo with a deterministic ``echo_id``; register it in
+           ``combat._active_echoes[side]``.
+        6. Emit ECHO_SPAWNED with the source window embedded in the payload.
+        7. Return EchoCastResult.
+
+        No ACTION_EXECUTED is emitted for the cast turn — the turn's
+        record is TURN_STARTED -> CHARGE_SPENT -> ECHO_SPAWNED. This also
+        keeps casts from polluting the action history future casts draw
+        from.
+
+        Args:
+            combat: The active CombatContext.
+            actor: The combatant casting the echo (spends the charge and
+                becomes the echo's owner).
+            turns: Number of the actor's most recent actions the echo will
+                replay, one per the actor's next ``turns`` turns (1-3,
+                default 1). Cost is a flat ECHO_CAST_COST regardless of N.
+
+        Returns:
+            EchoCastResult describing the newly spawned echo.
+
+        Raises:
+            ValueError: If ``turns < 1`` or ``turns > MAX_ECHO_TURNS``.
+            InsufficientChargeError: If ``actor.temporal_charge <
+                ECHO_CAST_COST``.
+            EchoHistoryError: If the actor has fewer than ``turns``
+                recorded actions to draw a source window from.
+            EchoAlreadyActiveError: If the actor's side already has a live
+                (non-expired, owner-alive) echo.
+            EchoUnavailableError: If ``combat.is_over``.
+        """
+        # --- Validate (order matches STEP-5-PLAN.md §3 error table) ---
+        if turns < 1 or turns > MAX_ECHO_TURNS:
+            raise ValueError(f"turns must be between 1 and {MAX_ECHO_TURNS}, got {turns}")
+
+        if actor.temporal_charge < ECHO_CAST_COST:
+            raise InsufficientChargeError(
+                f"Insufficient temporal charge: have {actor.temporal_charge}, need {ECHO_CAST_COST}"
+            )
+
+        history = combat._action_history.get(actor.id, deque())
+        if len(history) < turns:
+            raise EchoHistoryError(
+                f"Not enough recorded actions for echo cast: have {len(history)}, need {turns}"
+            )
+
+        side = combat._side_of(actor)
+        existing = combat._active_echoes.get(side)
+        if existing is not None and self._is_echo_live(combat, existing):
+            raise EchoAlreadyActiveError(f"A live echo is already active on side {side!r}")
+
+        if combat.is_over:
+            raise EchoUnavailableError("Cannot cast echo: combat is over")
+
+        # --- Capture source window (last `turns` entries, chronological) ---
+        source_actions = tuple(
+            EchoSourceAction(
+                source_turn=entry.source_turn,
+                action_type=entry.action_type,
+                target_id=entry.target_id,
+                damage_dealt=entry.damage_dealt,
+            )
+            for entry in list(history)[-turns:]
+        )
+
+        turn_number = combat._total_turns
+
+        # --- Emit CHARGE_SPENT, then deduct ---
+        charge_event = self._event_builder.charge_spent(
+            turn_number=turn_number,
+            actor_id=actor.id,
+            amount=ECHO_CAST_COST,
+            ability="echo_cast",
+        )
+        self._event_store.append_event(charge_event)
+        actor.spend_charge(ECHO_CAST_COST)
+
+        # --- Build Echo, register, emit ECHO_SPAWNED ---
+        echo_id = f"echo_{actor.id}_t{turn_number}"
+        echo = Echo(echo_id=echo_id, owner_id=actor.id, source_actions=source_actions)
+        combat._active_echoes[side] = echo
+
+        spawn_event = self._event_builder.echo_spawned(
+            turn_number=turn_number,
+            echo_id=echo_id,
+            owner_id=actor.id,
+            duration=turns,
+            damage_scale=ECHO_DAMAGE_SCALE,
+            source_actions=[
+                {
+                    "source_turn": sa.source_turn,
+                    "action_type": sa.action_type,
+                    "target_id": sa.target_id,
+                    "damage_dealt": sa.damage_dealt,
+                }
+                for sa in source_actions
+            ],
+        )
+        self._event_store.append_event(spawn_event)
+
+        return EchoCastResult(
+            echo_id=echo_id,
+            owner_id=actor.id,
+            duration=turns,
+            charge_spent=ECHO_CAST_COST,
+            source_turns=tuple(sa.source_turn for sa in source_actions),
+        )
+
+    def execute_echo_turn(self, combat: CombatContext, owner: Combatant) -> list[str]:
+        """
+        Advance the owner's side echo through one act, if one is due.
+
+        Called by ``CombatContext`` after the owner's own action resolves
+        (attack, defend, or flee) — never on the cast turn itself (locked
+        semantic 5), and including the broken-enemy skip path (locked
+        semantic 10: a stunned owner's echo still acts, since the echo is
+        a temporal entity independent of its owner's present state).
+
+        Dispatch per source action type (Phase 3 Step 5 locked semantics
+        6-7): "attack" resolves a live target (retargeting to the first
+        living enemy / the player if the original target has died) and
+        deals ``max(1, floor(damage_dealt * ECHO_DAMAGE_SCALE))`` — zero
+        new RNG draws; "defend" replays as a flavor no-op; "flee" (or an
+        attack with no living target) replays as a fizzle. Every act emits
+        exactly one ECHO_ACTED.
+
+        Args:
+            combat: The active CombatContext.
+            owner: The combatant whose turn just resolved.
+
+        Returns:
+            List of log messages from the echo's act (empty if no echo is
+            due to act this turn).
+        """
+        side = combat._side_of(owner)
+        echo = combat._active_echoes.get(side)
+        if echo is None or echo.owner_id != owner.id or echo.is_expired or combat.is_over:
+            return []
+
+        source_action = echo.source_actions[echo.next_index]
+        echo.next_index += 1
+        turn_number = combat._total_turns
+        msgs: list[str] = []
+
+        if source_action.action_type == "attack":
+            target = self._resolve_echo_target(combat, owner, source_action.target_id)
+            if target is None or source_action.damage_dealt is None:
+                msgs.extend(
+                    self._emit_echo_act(
+                        combat,
+                        echo,
+                        owner,
+                        "fizzle",
+                        None,
+                        None,
+                        source_action.source_turn,
+                        turn_number,
+                    )
+                )
+            else:
+                damage = max(1, math.floor(source_action.damage_dealt * ECHO_DAMAGE_SCALE))
+                entity_result = target.take_damage(damage, DamageType.PHYSICAL)
+                msgs.extend(
+                    self._emit_echo_act(
+                        combat,
+                        echo,
+                        owner,
+                        "attack",
+                        target.id,
+                        damage,
+                        source_action.source_turn,
+                        turn_number,
+                        target=target,
+                    )
+                )
+                if isinstance(target, Enemy) and entity_result.shield_broken:
+                    msgs.extend(combat._logger.log_shield_break(target))
+                    self._event_store.append_event(
+                        self._event_builder.shield_broken(
+                            turn_number=turn_number,
+                            combatant_id=target.id,
+                            broke_by=owner.id,
+                            damage_type=DamageType.PHYSICAL.name,
+                        )
+                    )
+                if not target.is_alive:
+                    msgs.extend(combat._logger.log_defeat(target))
+                    self._event_store.append_event(
+                        self._event_builder.combatant_defeated(
+                            turn_number=turn_number,
+                            combatant_id=target.id,
+                            defeated_by=owner.id,
+                            final_damage=damage,
+                        )
+                    )
+        elif source_action.action_type == "defend":
+            msgs.extend(
+                self._emit_echo_act(
+                    combat,
+                    echo,
+                    owner,
+                    "defend",
+                    None,
+                    None,
+                    source_action.source_turn,
+                    turn_number,
+                )
+            )
+        else:  # "flee" or any other unresolvable source action
+            msgs.extend(
+                self._emit_echo_act(
+                    combat,
+                    echo,
+                    owner,
+                    "fizzle",
+                    None,
+                    None,
+                    source_action.source_turn,
+                    turn_number,
+                )
+            )
+
+        # Re-check via next_index directly (not `echo.is_expired`): mypy
+        # narrows the early-return guard's `echo.is_expired` to Literal[False]
+        # and doesn't see that the mutation above (`next_index += 1`)
+        # invalidates it, so the property read alone is flagged unreachable.
+        if echo.next_index >= len(echo.source_actions):
+            del combat._active_echoes[side]
+
+        return msgs
+
+    def _emit_echo_act(
+        self,
+        combat: CombatContext,
+        echo: Echo,
+        owner: Combatant,
+        action_type: str,
+        target_id: str | None,
+        damage_dealt: int | None,
+        source_turn: int,
+        turn_number: int,
+        target: Combatant | None = None,
+    ) -> list[str]:
+        """
+        Log and emit ECHO_ACTED for one echo act.
+
+        Args:
+            combat: The active CombatContext.
+            echo: The acting echo.
+            owner: The echo's owner (for log message formatting).
+            action_type: "attack", "defend", or "fizzle".
+            target_id: Resolved target ID (attack only), else None.
+            damage_dealt: Scaled damage dealt (attack only), else None.
+            source_turn: Turn number of the source action being replayed.
+            turn_number: Current combat turn (the owner's just-executed turn).
+            target: The struck combatant, for log formatting (attack only).
+
+        Returns:
+            List of log messages for this act.
+        """
+        msgs = combat._logger.log_echo_acted(owner, action_type, target, damage_dealt)
+        self._event_store.append_event(
+            self._event_builder.echo_acted(
+                turn_number=turn_number,
+                echo_id=echo.echo_id,
+                owner_id=owner.id,
+                action_type=action_type,
+                target_id=target_id,
+                damage_dealt=damage_dealt,
+                source_turn=source_turn,
+            )
+        )
+        return msgs
+
+    def _resolve_echo_target(
+        self,
+        combat: CombatContext,
+        owner: Combatant,
+        original_target_id: str | None,
+    ) -> Combatant | None:
+        """
+        Resolve the live target for an echo attack act.
+
+        Prefers the original recorded target if it is still alive;
+        otherwise retargets to the first living enemy (player-owned echo,
+        list order — deterministic) or the player (enemy-owned echo).
+
+        Args:
+            combat: The active CombatContext.
+            owner: The echo's owner.
+            original_target_id: The target_id recorded on the source action.
+
+        Returns:
+            A living Combatant to strike, or None if no target is available
+            (the caller falls through to a fizzle).
+        """
+        if original_target_id is not None:
+            try:
+                original = self._find_combatant(combat, original_target_id)
+            except ValueError:
+                original = None
+            if original is not None and original.is_alive:
+                return original
+
+        if isinstance(owner, Player):
+            living = combat.living_enemies
+            return living[0] if living else None
+        return combat.player if combat.player.is_alive else None
+
+    def _is_echo_live(self, combat: CombatContext, echo: Echo) -> bool:
+        """
+        Whether an echo still occupies its side's single-echo slot.
+
+        An echo is "live" unless it has replayed all its source actions
+        (expired) or its owner is dead (inert — locked semantic 9). Both
+        conditions free the side up for a new cast.
+
+        Args:
+            combat: The active CombatContext.
+            echo: The echo to check.
+
+        Returns:
+            True if the echo still counts against the side cap.
+        """
+        if echo.is_expired:
+            return False
+        owner = self._find_combatant(combat, echo.owner_id)
+        return owner.is_alive
+
+    # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
 
@@ -339,7 +782,8 @@ class TemporalSystem:
             round_number, turn_index, turn_order (shallow copy),
             combatants (list of per-combatant field dicts),
             rng_state, damage_calc_rng_state, ai_rng_states (dict),
-            builder_branch_id.
+            builder_branch_id, active_echoes (copy of each Echo — Step 5),
+            action_history (copy of each combatant's deque — Step 5).
         """
         combatant_snapshots: list[dict] = []
         for c in [combat.player] + list(combat.enemies):
@@ -373,6 +817,19 @@ class TemporalSystem:
             "damage_calc_rng_state": combat._damage_calc.rng.getstate(),
             "ai_rng_states": ai_rng_states,
             "builder_branch_id": combat._event_builder.branch_id,
+            "active_echoes": {
+                side: Echo(
+                    echo_id=echo.echo_id,
+                    owner_id=echo.owner_id,
+                    source_actions=echo.source_actions,
+                    next_index=echo.next_index,
+                )
+                for side, echo in combat._active_echoes.items()
+            },
+            "action_history": {
+                combatant_id: list(history)
+                for combatant_id, history in combat._action_history.items()
+            },
         }
 
     def _restore_rollback_state(
@@ -417,6 +874,15 @@ class TemporalSystem:
         combat._turn_index = snapshot["turn_index"]
         combat._turn_order = snapshot["turn_order"]
         combat._phase = snapshot["phase"]
+
+        # 3b. Restore echo + action-history read-model state (Step 5)
+        combat._active_echoes = snapshot["active_echoes"]
+        restored_history: defaultdict[str, deque[EchoSourceAction]] = defaultdict(
+            lambda: deque(maxlen=MAX_ECHO_TURNS)
+        )
+        for combatant_id, entries in snapshot["action_history"].items():
+            restored_history[combatant_id] = deque(entries, maxlen=MAX_ECHO_TURNS)
+        combat._action_history = restored_history
 
         # 4. Restore branch_id on combat and builder
         combat._current_branch_id = snapshot["branch_id"]
@@ -511,6 +977,10 @@ class TemporalSystem:
         combat._turn_order = []
         combat._phase = CombatPhase.ROUND_START
 
+        # --- Reset echo + action-history read-model state (Step 5) ---
+        combat._active_echoes = {}
+        combat._action_history = defaultdict(lambda: deque(maxlen=MAX_ECHO_TURNS))
+
         # --- Reseed RNG: bit-identical to constructor ---
         combat._rng = random.Random(combat._seed)
         combat._damage_calc.rng = random.Random(combat._rng.randint(0, 2**31))
@@ -585,8 +1055,6 @@ class TemporalSystem:
             target = self._find_combatant(combat, target_id) if target_id else None
 
             if action_type == "attack" and target is not None and damage_dealt is not None:
-                from src.entities import DamageType
-
                 defender_weaknesses: list[DamageType] = []
                 defender_is_broken = False
                 if isinstance(target, Enemy):
@@ -621,6 +1089,19 @@ class TemporalSystem:
 
             # defend: no RNG, no state change beyond what's already tracked
 
+            # Rebuild the action-history read model (Step 5) — mirrors the
+            # append CombatContext._execute_* makes on the live path, so
+            # echoes cast on the post-rewind branch draw from a correct
+            # source window.
+            combat._action_history[actor_id].append(
+                EchoSourceAction(
+                    source_turn=data.get("turn_number", 0),
+                    action_type=action_type,
+                    target_id=target_id,
+                    damage_dealt=damage_dealt,
+                )
+            )
+
         elif etype == EventTypes.SHIELD_BROKEN:
             # Integrity assertion — shield break is already applied by take_damage
             combatant_id = data.get("combatant_id", "")
@@ -650,7 +1131,65 @@ class TemporalSystem:
             combatant = self._find_combatant(combat, actor_id)
             combatant.gain_charge(amount)
 
-        # ECHO_STONE_USED, ECHO_SPAWNED, ECHO_ACTED: deferred to Step 5
+        elif etype == EventTypes.ECHO_SPAWNED:
+            echo_id = data.get("echo_id", "")
+            owner_id = data.get("owner_id", "")
+            source_actions = tuple(
+                EchoSourceAction(
+                    source_turn=sa.get("source_turn", 0),
+                    action_type=sa.get("action_type", ""),
+                    target_id=sa.get("target_id"),
+                    damage_dealt=sa.get("damage_dealt"),
+                )
+                for sa in data.get("source_actions", [])
+            )
+            owner = self._find_combatant(combat, owner_id)
+            side = combat._side_of(owner)
+
+            existing = combat._active_echoes.get(side)
+            assert existing is None or existing.is_expired, (
+                f"Echo replay invariant violated: side {side!r} already has a "
+                f"live echo when replaying ECHO_SPAWNED for {echo_id!r}"
+            )
+
+            combat._active_echoes[side] = Echo(
+                echo_id=echo_id, owner_id=owner_id, source_actions=source_actions
+            )
+
+        elif etype == EventTypes.ECHO_ACTED:
+            echo_id = data.get("echo_id", "")
+            owner_id = data.get("owner_id", "")
+            action_type = data.get("action_type", "")
+            target_id = data.get("target_id")
+            damage_dealt = data.get("damage_dealt")
+
+            owner = self._find_combatant(combat, owner_id)
+            side = combat._side_of(owner)
+            echo = combat._active_echoes.get(side)
+
+            if echo is not None and echo.echo_id == echo_id:
+                source_action = echo.source_actions[echo.next_index]
+                echo.next_index += 1
+
+                if action_type == "attack" and target_id is not None and damage_dealt is not None:
+                    assert source_action.damage_dealt is not None, (
+                        f"Echo replay determinism failure: recorded attack act for "
+                        f"{echo_id!r} has no source damage to recompute from"
+                    )
+                    expected_damage = max(
+                        1, math.floor(source_action.damage_dealt * ECHO_DAMAGE_SCALE)
+                    )
+                    assert expected_damage == damage_dealt, (
+                        f"Echo replay determinism failure: recomputed damage "
+                        f"{expected_damage} != recorded {damage_dealt} for echo {echo_id!r}"
+                    )
+                    target = self._find_combatant(combat, target_id)
+                    target.take_damage(damage_dealt, DamageType.PHYSICAL)
+
+                if echo.is_expired:
+                    del combat._active_echoes[side]
+
+        # ECHO_STONE_USED: pre-Phase-3 event type, unused, untouched.
 
     def _find_combatant(self, combat: CombatContext, combatant_id: str) -> Combatant:
         """
@@ -676,17 +1215,6 @@ class TemporalSystem:
     # -------------------------------------------------------------------------
     # Stubs — implemented in later steps
     # -------------------------------------------------------------------------
-
-    def echo_cast(self, *args: object, **kwargs: object) -> object:
-        """
-        Summon a past-self echo to act alongside the player.
-
-        Not yet implemented. Echo Cast lands in Phase 3 Step 5.
-
-        Raises:
-            NotImplementedError: Always — implementation pending Step 5.
-        """
-        raise NotImplementedError("Phase 3 Step 5")
 
     def counter_stop(self, *args: object, **kwargs: object) -> object:
         """
