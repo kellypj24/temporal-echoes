@@ -108,7 +108,7 @@ def _offer_counter_window(
 8. Return `CounterStopResult`.
 
 **Integration into `rewind()`** (current order: validate → snapshot → CHARGE_SPENT → spend → branch → replay → TEMPORAL_REWIND):
-- Move the window in **after** the spend, **before** the snapshot: validate → CHARGE_SPENT → spend → **window** → (countered? return `CounterStopResult`) → snapshot → branch bump → replay → TEMPORAL_REWIND. The snapshot exists solely to protect the replay; a countered cast has nothing to roll back — charges are meant to stay spent.
+- Insert the window **after** the spend, **before** the branch bump: validate → snapshot → CHARGE_SPENT → spend → **window** → (countered? return `CounterStopResult`) → branch bump → replay → TEMPORAL_REWIND. The snapshot **stays in its original pre-spend position** (corrected during implementation, 2026-07-15): the §8a rollback contract requires a *replay failure* — a distinct error path from being countered — to restore the actor's charge to its true pre-rewind value, which a post-spend snapshot cannot capture (`test_rewind_replay_failure_restores_actor_charge` guards this). A countered cast returns before the snapshot is ever restored-from, so its position costs the countered path nothing.
 
 **Integration into `echo_cast()`** (current order: validate → capture window → CHARGE_SPENT → spend → build Echo → ECHO_SPAWNED):
 - validate → capture source window → CHARGE_SPENT → spend → **window** → (countered? return `CounterStopResult` — no Echo built, no ECHO_SPAWNED, nothing registered) → build → register → ECHO_SPAWNED.
