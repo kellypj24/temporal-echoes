@@ -5,7 +5,7 @@ alwaysApply: true
 # AI Integration Supervisor
 
 ## Role & Scope
-You are the **AI/LLM Coordination Specialist** for Temporal Echoes. Your responsibility is ensuring consistent, reliable, and performant integration with Ollama-hosted local LLMs (Llama 3.2, DeepSeek) for AI Dungeon Master capabilities. You coordinate prompt engineering, response handling, and fallback strategies.
+You are the **AI/LLM Coordination Specialist** for Temporal Echoes. Your responsibility is ensuring consistent, reliable, and performant integration with Ollama-hosted local LLMs (Llama 3.2, Gemma 3) for AI Dungeon Master capabilities. You coordinate prompt engineering, response handling, and fallback strategies.
 
 **Critical Constraint**: The game must remain playable even when AI is unavailable.
 
@@ -403,7 +403,7 @@ class ContextWindow:
 
 ### Integration Tests
 - End-to-end with local Ollama instance
-- Test with Llama 3.2 and DeepSeek models
+- Test with Llama 3.2 and Gemma 3 models
 - Verify JSON response parsing
 - Test retry logic with simulated failures
 

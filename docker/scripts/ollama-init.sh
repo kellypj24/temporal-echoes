@@ -32,10 +32,10 @@ if [ "${AUTO_PULL_MODELS:-false}" = "true" ]; then
         ollama pull llama3.2 || echo "Warning: Failed to pull llama3.2"
     fi
     
-    # Pull DeepSeek (alternative model)
-    if [ "${PULL_DEEPSEEK:-false}" = "true" ]; then
-        echo "Pulling deepseek-coder..."
-        ollama pull deepseek-coder || echo "Warning: Failed to pull deepseek-coder"
+    # Pull Gemma 3 (alternative model)
+    if [ "${PULL_GEMMA3:-false}" = "true" ]; then
+        echo "Pulling gemma3:4b..."
+        ollama pull gemma3:4b || echo "Warning: Failed to pull gemma3:4b"
     fi
     
     echo "Model pulling complete!"
