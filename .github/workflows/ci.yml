@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [main, "phase/*"]
 
+  # Post-merge backstop. A squash-merge can land before PR checks finish,
+  # so main is re-verified on every push.
+  push:
+    branches: [main]
+
 jobs:
   lint:
     name: Lint & Format Check
@@ -55,6 +60,15 @@ jobs:
       - name: Determine tests to run
         id: resolve-tests
         run: |
+          # On push there is no PR base to diff against (github.base_ref is
+          # empty, making the ref `origin/`), so run the full suite instead.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "test_files=tests/" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Post-merge backstop on main — running full suite."
+            exit 0
+          fi
+
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           echo "Changed files:"
           echo "$CHANGED"
