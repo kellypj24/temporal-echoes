@@ -62,7 +62,7 @@ class GameConfig(BaseSettings):
 
         llm_provider: Active LLM backend (ollama, anthropic)
         ollama_host: Ollama API host:port
-        llm_model: LLM model name (e.g., llama3.2, deepseek)
+        llm_model: LLM model name, tag included (e.g., llama3.2:3b, gemma3:4b)
         llm_timeout: LLM request timeout in seconds (1.0-30.0)
         llm_temperature: LLM temperature for creativity (0.0-2.0)
         anthropic_api_key: API key for the Anthropic provider (optional)
@@ -142,8 +142,8 @@ class GameConfig(BaseSettings):
     )
 
     llm_model: str = Field(
-        default="llama3.2",
-        description="LLM model name (e.g., llama3.2, deepseek)",
+        default="llama3.2:3b",
+        description="LLM model name, tag included (e.g., llama3.2:3b, gemma3:4b)",
     )
 
     llm_timeout: float = Field(

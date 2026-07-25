@@ -322,7 +322,7 @@ The SDD workflow enforces constitution compliance at:
 make dev-setup
 
 # Pull LLM model
-docker exec temporal-echoes-ollama ollama pull llama3.2
+docker exec temporal-echoes-ollama ollama pull llama3.2:3b
 
 # Run tests
 make test

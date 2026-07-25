@@ -28,21 +28,21 @@ if [ "${AUTO_PULL_MODELS:-false}" = "true" ]; then
     
     # Pull Llama 3.2 (primary model)
     if [ "${PULL_LLAMA32:-true}" = "true" ]; then
-        echo "Pulling llama3.2..."
-        ollama pull llama3.2 || echo "Warning: Failed to pull llama3.2"
+        echo "Pulling llama3.2:3b..."
+        ollama pull llama3.2:3b || echo "Warning: Failed to pull llama3.2:3b"
     fi
     
-    # Pull DeepSeek (alternative model)
-    if [ "${PULL_DEEPSEEK:-false}" = "true" ]; then
-        echo "Pulling deepseek-coder..."
-        ollama pull deepseek-coder || echo "Warning: Failed to pull deepseek-coder"
+    # Pull Gemma 3 (alternative model)
+    if [ "${PULL_GEMMA3:-false}" = "true" ]; then
+        echo "Pulling gemma3:4b..."
+        ollama pull gemma3:4b || echo "Warning: Failed to pull gemma3:4b"
     fi
     
     echo "Model pulling complete!"
 else
     echo "Skipping auto-pull. Set AUTO_PULL_MODELS=true to enable."
     echo "To manually pull models:"
-    echo "  docker exec temporal-echoes-ollama ollama pull llama3.2"
+    echo "  docker exec temporal-echoes-ollama ollama pull llama3.2:3b"
 fi
 
 echo "Ollama is ready for Temporal Echoes!"

@@ -80,7 +80,7 @@ def test_config_default_values(clean_env: None) -> None:
 
     # AI settings
     assert config.ollama_host == "localhost:11434"
-    assert config.llm_model == "llama3.2"
+    assert config.llm_model == "llama3.2:3b"
     assert config.llm_timeout == 5.0
     assert config.llm_temperature == 0.7
 
