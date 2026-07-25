@@ -119,7 +119,7 @@ temporal-echoes/
 
 3. **Pull LLM model** (Llama 3.2)
    ```bash
-   docker exec temporal-echoes-ollama ollama pull llama3.2
+   docker exec temporal-echoes-ollama ollama pull llama3.2:3b
    ```
 
 4. **Run the game**
