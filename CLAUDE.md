@@ -9,16 +9,7 @@
 
 ## Current Status
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Core Game Loop | Done (161 tests, 100% coverage) |
-| 2 | Combat System | Done (403 tests, 90.22% coverage) — pending final PR |
-| 3 | Timeline Mechanics | Planned |
-| 4 | AI Integration | Planned |
-| 5 | Polish & Content | Planned |
-
-**Active work**: `assignments/active/phase-2-combat-system/`
-**Completed reference**: `assignments/completed/phase-1-core-game-loop/`
+Where things stand and what's next: [`STATUS.md`](STATUS.md). Keep status there, not here.
 
 ## Phase 4 Direction — LangGraph for AI-DM orchestration (decided 2026-06-13)
 
