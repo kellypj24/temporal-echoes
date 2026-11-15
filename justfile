@@ -119,6 +119,7 @@ eval-go-test:
 
 # Aggregate: lint + test (what to run before commit)
 check: lint test eval-go-test
+    grove check
 
 # Aggregate: full CI pipeline locally
 ci: install lint test eval-go-test
