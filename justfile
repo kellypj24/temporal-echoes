@@ -40,7 +40,11 @@ fmt:
     uv run ruff check --fix src/ tests/
     uv run ruff format src/ tests/
 
-# Run the game
+# Play the terminal game: all encounters in order, or `just play <id>`; `just play --list`
+play *args:
+    uv run python -m src.play {{ args }}
+
+# Run the Phase 1 architecture demo loop
 run:
     uv run python -m src.main
 

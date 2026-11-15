@@ -26,7 +26,7 @@ import json
 import math
 import random
 from collections import defaultdict, deque
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -269,6 +269,55 @@ class NeverCounterPolicy:
     ) -> Combatant | None:
         """Always decline — see class docstring."""
         return None
+
+
+class DesignatedCounterPolicy:
+    """
+    Counter-Stop policy: named combatants counter whenever they are able.
+
+    Used to give an authored encounter a Chronomancer-flavoured opponent
+    ahead of the Step 7 AI: the charge economy alone paces it, since
+    ``_eligible_responders`` has already filtered to combatants holding
+    ``COUNTER_STOP_COST`` charge, and a counter spends that whole pool.
+
+    This is deliberately not weighted decision-making — Step 7 replaces it
+    through the same ``CounterStopPolicy`` seam.
+
+    Attributes:
+        _ids: Combatant ids that counter when eligible.
+    """
+
+    def __init__(self, counterer_ids: Iterable[str]) -> None:
+        """
+        Initialise the policy with the ids allowed to counter.
+
+        Args:
+            counterer_ids: Combatant ids that should Counter-Stop casts
+                whenever they appear in the eligible set.
+        """
+        self._ids = frozenset(counterer_ids)
+
+    def decide(
+        self,
+        combat: CombatContext,  # noqa: ARG002
+        announcement: TemporalAnnouncement,  # noqa: ARG002
+        eligible: Sequence[Combatant],
+    ) -> Combatant | None:
+        """
+        Counter with the first designated combatant in the eligible set.
+
+        Args:
+            combat: The active CombatContext (unused — the decision needs
+                no board state).
+            announcement: The cast being announced (unused — this policy
+                counters every ability equally).
+            eligible: Combatants who may respond, in deterministic order.
+
+        Returns:
+            The first eligible designated combatant, or None if none of
+            them can respond to this cast.
+        """
+        return next((c for c in eligible if c.id in self._ids), None)
 
 
 class TemporalSystem:
