@@ -147,7 +147,7 @@ class EventTypes:
 # Event types whose effects are undone by a rewind.
 # Persistent event types (everything else) emit and remain — they affect
 # meta-state like XP, loot, and quest counters that survive cross-timeline.
-# See assignments/active/phase-3-timeline-mechanics/DESIGN.md for the full table.
+# See grove/specs/timeline-mechanics/spec.md for the full table.
 _REWINDABLE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         EventTypes.TURN_STARTED,

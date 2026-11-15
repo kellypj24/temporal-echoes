@@ -1,0 +1,28 @@
+# Grove: where its documents live, which branch holds what is agreed, and
+# the harnesses init writes Grove's skills for.
+root: grove
+target: main
+agents:
+  claude: skills
+schema: default
+context: |
+  Turn-based RPG combat with time as a resource, in Python 3.13. Event-sourced: every state
+  change is an immutable row in `game_events`, and rewind is replay of that log. Validation is
+  `just check` (ruff, mypy, pytest with coverage, Go eval tests), which ends with `grove check`.
+  The constitution in CLAUDE.md is binding on every change. The game is played in the terminal
+  with `just play`; there is no Pygame front end. The narrator runs on the mock LLM provider;
+  the LangGraph AI Dungeon Master is Phase 4 and out of scope until the terminal game is fun
+  without it. Pre-Grove plans are in docs/archive/assignments/ and are history, not agreement.
+rules:
+  documents:
+    change-spec:
+      - Name the test file that shows each requirement.
+  skills:
+    implement:
+      - Work on a feature branch; never commit to main.
+      - Every combat path stays deterministic under a seed. A new RNG draw needs a replay test.
+      - Before pushing, run `just check` and record test evidence and deviations in the change's `implementation.md`.
+      - Update STATUS.md in the same PR.
+      - Open a PR and squash-merge it when CI is green; the merge is the owner's approval (PJ, 2026-11-15).
+    archive:
+      - Commit the archive on the feature branch, so the merge carries it to main.

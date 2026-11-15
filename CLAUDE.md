@@ -83,20 +83,24 @@ dbt/
 tests/
   unit/           # Unit tests
   integration/    # Integration tests
-assignments/
-  active/         # Current phase plans (SDD workflow)
-  completed/      # Reference documentation
-  templates/      # Reusable templates
+grove/
+  specs/          # Maintained specs: agreed behavior
+  changes/        # Approved future work; archived when implemented
+docs/archive/     # Pre-Grove plans (history, not agreement)
 ```
 
-## Development Workflow (Spec-Driven Development)
+## Development Workflow (Grove)
 
-1. **Research** -> `research.md` - Investigate unknowns, validate assumptions
-2. **Decisions** -> `decisions.md` - Document architectural decisions (ADR format)
-3. **Implementation** -> `PLAN.md` - Execute based on research and decisions
-4. **Validation** -> Verify constitution compliance and success criteria
+Three things are kept apart:
 
-**NO implementation until research and decisions are complete.**
+- `grove/specs/<id>/spec.md` on main is agreed behavior.
+- `grove/changes/<id>-<slug>/` on main is approved future work. Merging the proposal is the approval.
+- What the code does is evidence, not a rule.
+
+Loop: `/grove-propose` (asks every assumed decision once, numbered, with a recommendation)
+-> `/grove-implement <change-id>` on a feature branch -> `/grove-archive <change-id>`, which
+folds the change into the maintained spec in the same merge as the code. `just check` ends
+with `grove check`. Project rules for each step are in `grove.yaml`.
 
 ## Tooling
 - **Package Management**: uv (`uv add <package>`)
@@ -129,7 +133,7 @@ assignments/
 - Bare `except:` clauses
 
 ## Deviation Protocol
-Any deviation from constitution requires: Justification -> Documentation in `decisions.md` -> Human approval -> Tech debt issue -> Remediation plan.
+Any deviation from constitution requires: Justification -> Documentation in the change's `proposal.md` -> Human approval -> Tech debt issue -> Remediation plan.
 
 ## Reference Docs
 Full detailed patterns and code examples are in `.cursor/rules/*.mdc` files.

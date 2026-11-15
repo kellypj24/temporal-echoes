@@ -57,21 +57,10 @@ temporal-echoes/
 │   ├── tests/
 │   ├── macros/
 │   └── dbt_project.yml
-├── assignments/           # Spec-Driven Development workflow
-│   ├── active/           # Current phases
-│   │   └── phase-X/
-│   │       ├── research.md      # Research findings
-│   │       ├── decisions.md     # Architecture decisions (ADRs)
-│   │       ├── PLAN.md         # Implementation plan
-│   │       ├── prompts/        # Step execution prompts
-│   │       └── README.md       # Phase tracking
-│   ├── completed/        # Finished phases with retrospectives
-│   └── templates/        # SDD templates
-│       ├── RESEARCH_TEMPLATE.md
-│       ├── DECISIONS_TEMPLATE.md
-│       ├── PHASE_TEMPLATE.md
-│       ├── STEP_TEMPLATE.md
-│       └── VALIDATION_TEMPLATE.md
+├── grove/                 # Specs and changes (see Development workflow)
+│   ├── specs/            # Maintained specs: agreed behavior
+│   └── changes/          # Approved future work
+├── docs/archive/          # Pre-Grove phase plans
 ├── tests/                # Test suite
 │   ├── unit/
 │   └── integration/
@@ -247,46 +236,13 @@ Every development phase follows this 4-step process:
 3. **🛠️ Implementation** (`PLAN.md`) - Execute with constitution compliance
 4. **✅ Validation** - Verify success criteria and retrospective
 
-## 🗂️ Assignment Management (Spec-Driven Development)
+## 🗂️ Development workflow
 
-Development follows a research-first approach inspired by Spec-Kit:
-
-### Phase Structure
-```
-assignments/active/phase-X/
-├── research.md          # Research findings and tech validation
-├── decisions.md         # Architecture Decision Records (ADRs)
-├── PLAN.md             # Implementation plan
-├── prompts/            # Detailed step execution prompts
-└── README.md           # Phase tracking
-```
-
-### Creating a New Phase
-
-```bash
-# 1. Research Phase (REQUIRED FIRST)
-cp assignments/templates/RESEARCH_TEMPLATE.md assignments/active/phase-X/research.md
-# Complete all research topics, validate assumptions, get approval
-
-# 2. Decision Phase (REQUIRED BEFORE CODING)
-cp assignments/templates/DECISIONS_TEMPLATE.md assignments/active/phase-X/decisions.md
-# Document all major decisions using ADR format
-
-# 3. Implementation Phase (AFTER research & decisions approved)
-cp assignments/templates/PHASE_TEMPLATE.md assignments/active/phase-X/PLAN.md
-# Break down into steps, execute with constitution compliance
-
-# 4. Validation Phase
-cp assignments/templates/VALIDATION_TEMPLATE.md assignments/active/phase-X/VALIDATION.md
-# Verify success criteria, complete retrospective
-```
-
-### Supervisors Guide You Through:
-1. **Research**: Investigating unknowns, validating tech stack
-2. **Decisions**: Documenting architectural choices with trade-offs
-3. **Implementation**: Breaking down phases into steps with constitution checkpoints
-4. **Validation**: Running checklists, retrospectives
-5. **Completion**: Moving finished work to `assignments/completed/`
+Work is specified with [Grove](https://github.com/mascah/grove). `grove/specs/` holds the
+agreed behavior of each capability; `grove/changes/` holds approved future work, and a
+change is approved by merging its proposal. Implementing a change and folding it into the
+maintained spec land in one merge. `just check` ends with `grove check`. Phase plans from
+before Grove are in `docs/archive/assignments/`.
 
 ### Constitution Compliance
 Read `.cursor/rules/CONSTITUTION.md` for the **15 immutable principles** that govern all development. Constitution checkpoints occur at:
