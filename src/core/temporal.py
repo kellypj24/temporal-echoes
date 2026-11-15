@@ -26,7 +26,7 @@ import json
 import math
 import random
 from collections import defaultdict, deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -271,53 +271,40 @@ class NeverCounterPolicy:
         return None
 
 
-class DesignatedCounterPolicy:
+class ArchetypeCounterPolicy:
     """
-    Counter-Stop policy: named combatants counter whenever they are able.
+    Counter-Stop policy: each eligible enemy's AI decides for itself.
 
-    Used to give an authored encounter a Chronomancer-flavoured opponent
-    ahead of the Step 7 AI: the charge economy alone paces it, since
-    ``_eligible_responders`` has already filtered to combatants holding
-    ``COUNTER_STOP_COST`` charge, and a counter spends that whole pool.
-
-    This is deliberately not weighted decision-making — Step 7 replaces it
-    through the same ``CounterStopPolicy`` seam.
-
-    Attributes:
-        _ids: Combatant ids that counter when eligible.
+    The default policy of ``CombatContext``. Enemy side: the first
+    eligible enemy, in the deterministic order given, whose AI wants to
+    counter. Player side: never counters, since nothing asks the player.
+    With no Chronomancer present every AI declines, so this behaves as
+    ``NeverCounterPolicy``. Holds no state and draws no random number.
     """
-
-    def __init__(self, counterer_ids: Iterable[str]) -> None:
-        """
-        Initialise the policy with the ids allowed to counter.
-
-        Args:
-            counterer_ids: Combatant ids that should Counter-Stop casts
-                whenever they appear in the eligible set.
-        """
-        self._ids = frozenset(counterer_ids)
 
     def decide(
         self,
-        combat: CombatContext,  # noqa: ARG002
-        announcement: TemporalAnnouncement,  # noqa: ARG002
+        combat: CombatContext,
+        announcement: TemporalAnnouncement,
         eligible: Sequence[Combatant],
     ) -> Combatant | None:
         """
-        Counter with the first designated combatant in the eligible set.
+        Ask each eligible enemy's AI, in order, whether it counters.
 
         Args:
-            combat: The active CombatContext (unused — the decision needs
-                no board state).
-            announcement: The cast being announced (unused — this policy
-                counters every ability equally).
+            combat: The active CombatContext.
+            announcement: The cast being announced.
             eligible: Combatants who may respond, in deterministic order.
 
         Returns:
-            The first eligible designated combatant, or None if none of
-            them can respond to this cast.
+            The first eligible enemy whose AI wants to counter, or None.
         """
-        return next((c for c in eligible if c.id in self._ids), None)
+        state = combat.ai_state()
+        for candidate in eligible:
+            ai = combat._enemy_ais.get(candidate.id)
+            if ai is not None and ai.wants_counter_stop(announcement, state):
+                return candidate
+        return None
 
 
 class TemporalSystem:
@@ -532,13 +519,21 @@ class TemporalSystem:
         if combat.is_over or combat.phase == CombatPhase.COMBAT_OVER:
             raise RewindUnavailableError("Cannot rewind: combat is over")
 
-        if combat.phase == CombatPhase.EXECUTING_TURN:
+        # An enemy may rewind as its turn action: at the top of its own
+        # turn, before anything has resolved. Nobody else may rewind while a
+        # turn executes; reacting to a cast is what Counter-Stop is for.
+        enemy_turn_action = (
+            combat.phase == CombatPhase.EXECUTING_TURN
+            and isinstance(actor, Enemy)
+            and combat.current_combatant is actor
+        )
+        if combat.phase == CombatPhase.EXECUTING_TURN and not enemy_turn_action:
             raise RewindUnavailableError(
                 "Cannot rewind during turn execution (EXECUTING_TURN phase)"
             )
 
         allowed_phases = {CombatPhase.AWAITING_PLAYER_INPUT, CombatPhase.ROUND_END}
-        if combat.phase not in allowed_phases:
+        if combat.phase not in allowed_phases and not enemy_turn_action:
             raise RewindUnavailableError(
                 f"Rewind not allowed in phase {combat.phase.name}; "
                 f"allowed: AWAITING_PLAYER_INPUT, ROUND_END"
@@ -1271,14 +1266,32 @@ class TemporalSystem:
             and e.branch_id <= combat._current_branch_id - 1  # pre-rewind branch only
         ]
 
-        # --- Partition: rewindable, truncated to to_turn ---
+        # --- Live lineage: how far each earlier branch was lived ---
+        # Branch b was forked from branch b-1 at the `to_turn` of the rewind
+        # that created it, so an event on branch k is still part of history
+        # only if its turn is at or before every later fork. The fork of
+        # the branch being created now is `to_turn` itself. Without this,
+        # the abandoned tail of an earlier branch would be replayed on top
+        # of the turns that replaced it.
+        forks: dict[int, int] = {combat._current_branch_id: to_turn}
+        for event in combat_events:
+            if event.event_type == EventTypes.TEMPORAL_REWIND:
+                data = json.loads(event.event_data)
+                forks[data["branch_id"]] = data["to_turn"]
+        horizon: dict[int, int] = {}
+        limit = to_turn
+        for branch in range(combat._current_branch_id, 0, -1):
+            limit = min(limit, forks.get(branch, limit))
+            horizon[branch - 1] = limit
+
+        # --- Partition: rewindable, truncated to each branch's horizon ---
         replay_set: list[GameEvent] = []
         for event in combat_events:
             if not is_rewindable(event.event_type):
                 continue
             event_data = json.loads(event.event_data)
             turn_number = event_data.get("turn_number", 0)
-            if turn_number <= to_turn:
+            if turn_number <= horizon.get(event.branch_id, to_turn):
                 replay_set.append(event)
 
         # --- Reset combatants to COMBAT_STARTED state ---
@@ -1346,6 +1359,10 @@ class TemporalSystem:
             0,
         )
         combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
+        # The turn a player takes right after a rewind has no TURN_STARTED
+        # of its own, so the marker cannot be relied on for the last turn
+        # of a branch. The rewind lands on `to_turn` by definition.
+        combat._total_turns = to_turn
 
         return len(replay_set)
 
@@ -1378,6 +1395,14 @@ class TemporalSystem:
             # needs no turn-order arithmetic (turn_order is empty during replay).
             turn_number = data.get("turn_number", 0)
             combat._total_turns = turn_number
+            # Break recovery is not an event: the live loop applies it when
+            # an enemy's turn ends (CombatContext.advance_turn). Nothing can
+            # hit an enemy during its own turn, so applying it as the turn
+            # starts rebuilds the same state for every later event.
+            active_id = data.get("active_combatant_id", "")
+            active = next((e for e in combat.enemies if e.id == active_id), None)
+            if active is not None and active.is_alive:
+                active.process_turn_end()
             if "round_number" in data:
                 combat._round_number = data["round_number"]
             elif turn_number >= 1:
@@ -1446,14 +1471,11 @@ class TemporalSystem:
             )
 
         elif etype == EventTypes.SHIELD_BROKEN:
-            # Integrity assertion — shield break is already applied by take_damage
-            combatant_id = data.get("combatant_id", "")
-            combatant = self._find_combatant(combat, combatant_id)
-            if isinstance(combatant, Enemy):
-                assert combatant.is_broken, (
-                    f"SHIELD_BROKEN event for {combatant_id} but enemy not broken "
-                    f"after replaying preceding ACTION_EXECUTED"
-                )
+            # Nothing to apply: the break is produced by take_damage when the
+            # ACTION_EXECUTED or ECHO_ACTED that caused it is replayed. The
+            # live path stores SHIELD_BROKEN before that event, so the
+            # enemy is not yet broken at this point in the stream.
+            pass
 
         elif etype == EventTypes.BOOST_POINT_GAINED:
             combatant_id = data.get("combatant_id", "")

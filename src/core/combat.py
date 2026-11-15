@@ -11,18 +11,21 @@ Related Decisions: DEC-2001 through DEC-2006
 
 from __future__ import annotations
 
+import json
 import random
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from enum import Enum, auto
 
 from src.core.ai import AIArchetype, CombatAction, CombatState, EnemyAI, create_enemy_ai
 from src.core.combat_events import CombatEventBuilder
 from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
-from src.core.events import GameEvent
+from src.core.events import EventTypes, GameEvent
+from src.core.exceptions import TemporalError
 from src.core.persistence import EventStore
 from src.core.temporal import (
     MAX_ECHO_TURNS,
+    ArchetypeCounterPolicy,
     CounterStopPolicy,
     CounterStopResult,
     Echo,
@@ -59,6 +62,7 @@ _ARCHETYPE_MAP: dict[str, AIArchetype] = {
     "defensive": AIArchetype.DEFENSIVE,
     "tactical": AIArchetype.TACTICAL,
     "berserker": AIArchetype.BERSERKER,
+    "chronomancer": AIArchetype.CHRONOMANCER,
 }
 
 # Base flee chance percentage
@@ -159,7 +163,9 @@ class CombatContext:
         self._temporal = TemporalSystem(
             event_store=event_store,
             event_builder=self._event_builder,
-            counter_policy=counter_policy,
+            counter_policy=counter_policy
+            if counter_policy is not None
+            else ArchetypeCounterPolicy(),
         )
 
         # Combat-local rewind branch (0 = original line, increments per rewind)
@@ -368,12 +374,63 @@ class CombatContext:
         if ai is None:
             raise ValueError(f"No AI registered for enemy {enemy.id}")
 
-        combat_state = CombatState(
+        return ai.select_action(self.ai_state())
+
+    def ai_state(self) -> CombatState:
+        """
+        Snapshot what an enemy AI may read to make a decision.
+
+        Returns:
+            A `CombatState` for the current moment, including each
+            enemy's persistent rewind count and echo-source history size.
+        """
+        return CombatState(
             player=self.player,
             enemies=self.living_enemies,
             round_number=self._round_number,
+            total_turns=self._total_turns,
+            rewind_counts=self._temporal_rewind_counts(),
+            history_lengths={
+                e.id: len(self._action_history[e.id])
+                for e in self.living_enemies
+                if e.id in self._action_history
+            },
+            enemy_echo_active=(
+                "enemy" in self._active_echoes
+                and self._temporal._is_echo_live(self, self._active_echoes["enemy"])
+            ),
         )
-        return ai.select_action(combat_state)
+
+    def temporal_rewind_count(self, actor_id: str) -> int:
+        """
+        Count the rewinds a combatant has cast in this combat.
+
+        Reads persistent TEMPORAL_REWIND events from the store, so the
+        count is the same on every branch and is not undone by a rewind.
+
+        Args:
+            actor_id: The combatant whose rewinds to count.
+
+        Returns:
+            Number of completed rewinds cast by that combatant.
+        """
+        return self._temporal_rewind_counts().get(actor_id, 0)
+
+    def _temporal_rewind_counts(self) -> dict[str, int]:
+        """
+        Count this combat's completed rewinds per caster, in one store read.
+
+        Returns:
+            Combatant id -> number of TEMPORAL_REWIND events it has cast.
+        """
+        counts: Counter[str] = Counter()
+        for event in self._event_store.get_events_by_timeline(self._timeline_id):
+            if event.aggregate_id != self.combat_id:
+                continue
+            if event.event_type != EventTypes.TEMPORAL_REWIND:
+                continue
+            counts[json.loads(event.event_data).get("actor_id", "")] += 1
+        return dict(counts)
 
     def submit_player_action(self, action: CombatAction) -> list[str]:
         """
@@ -401,6 +458,8 @@ class CombatContext:
         Raises:
             RuntimeError: If not awaiting player input.
             ValueError: If action_type is invalid.
+            TemporalError: If an Echo Cast is invalid; combat is left
+                awaiting the player's input with no turn counted.
         """
         if self._phase != CombatPhase.AWAITING_PLAYER_INPUT:
             raise RuntimeError(f"Cannot submit player action in phase {self._phase.name}")
@@ -420,7 +479,14 @@ class CombatContext:
             msgs.extend(self._execute_flee(self.player))
             msgs.extend(self._temporal.execute_echo_turn(self, self.player))
         elif action.action_type == "echo_cast":
-            cast_result = self._temporal.echo_cast(self, self.player, turns=action.echo_turns)
+            try:
+                cast_result = self._temporal.echo_cast(self, self.player, turns=action.echo_turns)
+            except TemporalError:
+                # An invalid cast changes nothing: the turn is still the
+                # player's to take.
+                self._phase = CombatPhase.AWAITING_PLAYER_INPUT
+                self._total_turns -= 1
+                raise
             if isinstance(cast_result, EchoCastResult):
                 msgs.extend(self._logger.log_echo_spawned(self.player, cast_result.duration))
             # CounterStopResult: _offer_counter_window already logged the
@@ -434,6 +500,11 @@ class CombatContext:
         """
         Execute an enemy's turn (get AI action and execute it).
 
+        Driver contract: if this returns with ``phase`` equal to
+        ``AWAITING_PLAYER_INPUT``, the enemy rewound time. The turn it was
+        taking no longer exists, so the caller must not call
+        ``advance_turn()``; the player acts next.
+
         Broken enemies skip their turn — but their echo still acts (Phase 3
         Step 5 locked semantic 10: an echo is a temporal entity independent
         of its owner's present state), so the echo hook runs on both the
@@ -445,18 +516,32 @@ class CombatContext:
         Returns:
             List of log messages from the turn.
         """
-        self._phase = CombatPhase.EXECUTING_TURN
-        self._total_turns += 1
         msgs: list[str] = []
 
         # Broken enemies skip their turn
         if enemy.is_broken:
+            self._phase = CombatPhase.EXECUTING_TURN
+            self._total_turns += 1
             msgs.append(f"{enemy.name} is stunned and cannot act!")
             self._logger._messages.append(f"{enemy.name} is stunned and cannot act!")
             msgs.extend(self._temporal.execute_echo_turn(self, enemy))
             return msgs
 
+        # Selection happens before the turn is counted so that a rewind
+        # chosen as the turn's action sees `_total_turns` as the last
+        # completed turn. Still exactly one select_action call per turn.
         action = self.get_enemy_action(enemy)
+
+        if action.action_type == "rewind":
+            rewound = self._execute_enemy_rewind(enemy, msgs)
+            if rewound:
+                return msgs
+            # Countered or unavailable: the turn was committed to a cast
+            # that did nothing, and passes as a defend.
+            action = CombatAction(action_type="defend", target_id=enemy.id)
+
+        self._phase = CombatPhase.EXECUTING_TURN
+        self._total_turns += 1
 
         if action.action_type == "attack":
             msgs.extend(self._execute_attack(enemy, self.player, action))
@@ -465,12 +550,49 @@ class CombatContext:
         elif action.action_type == "ability":
             # Abilities act as attacks for now
             msgs.extend(self._execute_attack(enemy, self.player, action))
+        elif action.action_type == "echo_cast":
+            try:
+                cast_result = self._temporal.echo_cast(self, enemy, turns=action.echo_turns)
+            except TemporalError:
+                msgs.extend(self._execute_defend(enemy))
+            else:
+                if isinstance(cast_result, EchoCastResult):
+                    msgs.extend(self._logger.log_echo_spawned(enemy, cast_result.duration))
+            # The echo does not act on the cast turn.
+            return msgs
         else:
             msgs.extend(self._execute_defend(enemy))
 
         msgs.extend(self._temporal.execute_echo_turn(self, enemy))
 
         return msgs
+
+    def _execute_enemy_rewind(self, enemy: Enemy, msgs: list[str]) -> bool:
+        """
+        Cast a 1-turn rewind as an enemy's turn action.
+
+        Args:
+            enemy: The enemy rewinding; must be the current combatant.
+            msgs: Log messages for this turn, appended to in place.
+
+        Returns:
+            True if time was rewound. Combat is then awaiting player
+            input and the caller must not advance the turn. False if the
+            cast was countered or rejected; the enemy's turn continues.
+        """
+        try:
+            result = self._temporal.rewind(self, enemy, turns=1)
+        except TemporalError:
+            return False
+        if not isinstance(result, RewindResult):
+            return False
+        line = (
+            f"{enemy.name} rewinds time! "
+            f"The last {result.from_turn - result.to_turn} turn(s) never happened."
+        )
+        msgs.append(line)
+        self._logger._messages.append(line)
+        return True
 
     def advance_turn(self) -> list[str]:
         """

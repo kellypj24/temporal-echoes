@@ -84,8 +84,10 @@ jobs:
               tests/**/*.py)
                 TEST_FILES="$TEST_FILES $file"
                 ;;
-              src/core/ai.py)
-                TEST_FILES="$TEST_FILES tests/unit/test_ai.py"
+              src/core/combat.py|src/core/temporal.py|src/core/ai.py)
+                # The combat engine: rewind replay re-runs every rule, so a
+                # change here can break any combat test.
+                RUN_FULL=true
                 ;;
               src/core/damage.py)
                 TEST_FILES="$TEST_FILES tests/unit/test_damage.py tests/unit/test_damage_properties.py"

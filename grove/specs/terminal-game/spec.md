@@ -74,16 +74,6 @@ The same encounter, seed and input script shall produce the same output, line fo
 - WHEN the game is run twice
 - THEN the two outputs are equal (`tests/integration/test_play.py`)
 
-### Requirement: Designated counterers
-
-Where an encounter marks an enemy as countering, that enemy shall Counter-Stop a player's rewind or Echo Cast whenever it is eligible to respond, and the game shall say who countered and how much charge was lost.
-
-#### Scenario: Countered at the gate
-
-- GIVEN the `gate` encounter with the Chronomancer holding 3 charge
-- WHEN the player casts Echo
-- THEN the cast has no effect, the Chronomancer holds 0 charge, and the output names her (`tests/unit/test_combat_cli.py`)
-
 ### Requirement: Rendering holds no rules
 
 The renderer shall format state it is given and decide nothing; the controller shall translate input into engine calls and compute no damage, cost or outcome.
@@ -94,6 +84,17 @@ The renderer shall format state it is given and decide nothing; the controller s
 - WHEN its imports are read
 - THEN it imports nothing from `src/core` except types (`tests/unit/test_console.py`)
 
+### Requirement: Enemy rewinds are shown and honoured
+
+When an enemy rewinds, the game shall say so, draw the earlier board, and ask the player for a command without advancing the turn.
+
+#### Scenario: The gate
+
+- GIVEN the `gate` encounter and a script that attacks the Chronomancer every turn
+- WHEN she drops below 40 percent HP holding charge
+- THEN the output says she rewinds time and the fight still ends (`tests/integration/test_play.py`)
+
 ## History
 
 - [261115-jk63e](../../changes/archive/261115-jk63e-playable-terminal-game/) Playable terminal game
+- [261115-ctbrq](../../changes/archive/261115-ctbrq-chronomancer/) Chronomancer
