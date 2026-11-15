@@ -1,0 +1,5 @@
+title: "Playable terminal game"
+created: 2026-11-15T15:10:00Z
+description: Text front end for combat; three authored encounters playable alone or in sequence.
+schema: default
+base: 122f9882e383d22183cc317af81703b79b69c178

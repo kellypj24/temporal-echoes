@@ -29,6 +29,7 @@ from src.core.temporal import (
     ECHO_CAST_COST,
     CounterStopPolicy,
     CounterStopResult,
+    DesignatedCounterPolicy,
     EchoCastResult,
     RewindResult,
     TemporalAnnouncement,
@@ -522,3 +523,54 @@ class TestWindowMechanics:
         assert isinstance(result, CounterStopResult)
         assert result.responder_id == combat.player.id
         assert combat._active_echoes == {}
+
+
+# ============================================================================
+# DesignatedCounterPolicy
+# ============================================================================
+
+
+class TestDesignatedCounterPolicy:
+    """Named combatants counter whenever they are eligible."""
+
+    _ANNOUNCEMENT = TemporalAnnouncement(
+        ability="rewind", caster_id="player_1", magnitude=1, turn_number=3
+    )
+
+    def test_first_designated_eligible_combatant_responds(self) -> None:
+        bystander = create_test_enemy(id="enemy_1")
+        mage = create_test_enemy(id="enemy_2")
+        other_mage = create_test_enemy(id="enemy_3")
+        policy = DesignatedCounterPolicy(["enemy_3", "enemy_2"])
+        combat = _build_combat(enemies=[bystander, mage, other_mage])
+
+        chosen = policy.decide(combat, self._ANNOUNCEMENT, [bystander, mage, other_mage])
+
+        assert chosen is mage
+
+    def test_nobody_designated_means_no_counter(self) -> None:
+        enemy = create_test_enemy(id="enemy_1")
+        combat = _build_combat(enemies=[enemy])
+
+        assert DesignatedCounterPolicy([]).decide(combat, self._ANNOUNCEMENT, [enemy]) is None
+        assert (
+            DesignatedCounterPolicy(["ghost"]).decide(combat, self._ANNOUNCEMENT, [enemy]) is None
+        )
+
+    def test_designated_enemy_fizzles_a_rewind_through_the_window(self) -> None:
+        combat = _build_combat(policy=DesignatedCounterPolicy(["enemy_1"]))
+        combat.start_round()
+        combat.submit_player_action(_attack())
+        combat._phase = CombatPhase.AWAITING_PLAYER_INPUT
+        responder = combat.enemies[0]
+        responder.temporal_charge = COUNTER_STOP_COST
+        combat.player.temporal_charge = 1
+        branch_before = combat._current_branch_id
+
+        result = combat._temporal.rewind(combat, combat.player, turns=1)
+
+        assert isinstance(result, CounterStopResult)
+        assert result.responder_id == responder.id
+        assert responder.temporal_charge == 0
+        assert combat.player.temporal_charge == 0
+        assert combat._current_branch_id == branch_before

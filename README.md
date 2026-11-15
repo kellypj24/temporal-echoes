@@ -111,9 +111,9 @@ temporal-echoes/
    docker exec temporal-echoes-ollama ollama pull llama3.2:3b
    ```
 
-4. **Run the game**
+4. **Play** (needs neither Docker nor a model)
    ```bash
-   just run
+   just play
    ```
 
 ## 📋 Development Commands
@@ -126,7 +126,9 @@ temporal-echoes/
 | `just bench` | Run performance benchmarks (`tests/benchmarks/bench_*.py`) |
 | `just lint` | Run ruff lint + format check + mypy (matches CI scope) |
 | `just fmt` | Auto-fix ruff lint + format |
-| `just run` | Start the game |
+| `just play` | Play the terminal game: three fights in order, wounds carried |
+| `just play <id>` | Play one fight (`just play --list` for ids) |
+| `just run` | Run the Phase 1 architecture demo loop |
 | `just dbt-run` | Run dbt analytics models |
 | `just docker-up` | Start Docker containers |
 | `just docker-down` | Stop Docker containers |

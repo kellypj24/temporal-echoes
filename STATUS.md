@@ -7,21 +7,24 @@ _Updated 2026-11-15._
 
 ## Now
 
-- Active again. Goal: a terminal game that is fun without AI.
-- Grove adopted: maintained specs `combat` and `timeline-mechanics` in `grove/specs/`;
-  `just check` ends with `grove check`. Old phase plans are in `docs/archive/assignments/`.
-- Phase 3 Steps 1–6 are on main: rewind, echo cast and counter-stop, deterministic.
+- Playable: `just play` runs three authored fights in the terminal, wounds carried;
+  `just play <id>` plays one. Spec: `grove/specs/terminal-game/`.
+- Not yet a game: attacking every turn wins all three fights.
+- Grove adopted: maintained specs in `grove/specs/`; `just check` ends with `grove check`.
+  Old phase plans are in `docs/archive/assignments/`.
 
 ## Next
 
-1. `playable-cli`: the terminal combat front end on `feature/playable-combat-cli`, with
-   tests and `just play`.
-2. `chronomancer`: the Step 7 plan (`03de1c4` on `phase/3-step-7-chronomancer`) as a Grove
-   change, then built.
-3. `encounter-balance`: tune the three encounters so plain attacks lose the gate fight.
+1. `chronomancer`: the Step 7 plan (`03de1c4` on `phase/3-step-7-chronomancer`) as a Grove
+   change, then built. Replaces `DesignatedCounterPolicy` at the gate.
+2. `encounter-balance`: tune the three encounters so plain attacks lose the gate fight.
+   Inputs are in the archived `playable-terminal-game` change's `implementation.md`: a
+   rewind's unit is one combatant's turn, and a rewind often refunds its own charge.
 
 ## Open decisions
 
+- Whether `just run` should start the game instead of the Phase 1 demo loop.
+- Whether an escaped fight should let the sequence continue; today it ends it.
 - `PROJECT_SUMMARY.md`, `SETUP_GUIDE.md` and `.cursor/rules/` still describe the
   `assignments/` workflow: rewrite or delete.
 
