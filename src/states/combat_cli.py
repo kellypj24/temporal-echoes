@@ -155,6 +155,10 @@ class CombatCLI:
                 self._combat.execute_enemy_turn(current)
                 self._flush()
                 self._pause()
+                if self._combat.phase is CombatPhase.AWAITING_PLAYER_INPUT:
+                    # The enemy rewound time: its turn no longer exists
+                    # and the player acts next, so there is nothing to advance.
+                    continue
 
             self._combat.advance_turn()
             self._flush()

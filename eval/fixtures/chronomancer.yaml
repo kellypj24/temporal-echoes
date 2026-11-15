@@ -1,0 +1,96 @@
+# Chronomancer decision fixtures.
+#
+# Pure rules: scripts/eval_runner.py builds the described situation, asks
+# ChronomancerAI once, and returns { decision, echo_turns, wants_counter,
+# distribution }. No Narrator and no provider are constructed, so these run
+# the same under any TEMPORAL_LLM_PROVIDER.
+#
+# Inputs default to a healthy Chronomancer mid-fight, alone, with one action
+# of history, no charge, no prior rewinds, facing a player with no charge.
+#
+# Run:
+#   just eval-filter chrono
+
+fixtures:
+  - id: chrono_rewind_when_hurt
+    category: chronomancer
+    input: {own_hp_pct: 39, own_charge: 1, living_enemies: 3}
+    expect: {decision_equals: rewind}
+
+  - id: chrono_no_rewind_at_threshold
+    category: chronomancer
+    input: {own_hp_pct: 40, own_charge: 1, living_enemies: 3}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_no_rewind_without_charge
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 0}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_rewind_cap_reached
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 3, prior_rewinds: 2, living_enemies: 2}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_rewind_under_cap
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 3, prior_rewinds: 1, living_enemies: 2}
+    expect: {decision_equals: rewind}
+
+  - id: chrono_no_rewind_before_first_turn
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 1, total_turns: 0, history_len: 0}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_rewind_beats_echo
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 3, history_len: 3}
+    expect: {decision_equals: rewind}
+
+  - id: chrono_rewind_ignores_hoard_guard
+    category: chronomancer
+    input: {own_hp_pct: 10, own_charge: 3, player_charge: 3}
+    expect: {decision_equals: rewind}
+
+  - id: chrono_echo_when_alone
+    category: chronomancer
+    input: {own_charge: 2, history_len: 3}
+    expect: {decision_equals: echo_cast, echo_turns_equals: 3}
+
+  - id: chrono_echo_window_bounded_by_history
+    category: chronomancer
+    input: {own_charge: 2, history_len: 1}
+    expect: {decision_equals: echo_cast, echo_turns_equals: 1}
+
+  - id: chrono_no_echo_with_allies
+    category: chronomancer
+    input: {own_charge: 3, history_len: 3, living_enemies: 2}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_echo_held_for_counter
+    category: chronomancer
+    input: {own_charge: 3, history_len: 3, player_charge: 2}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_no_second_echo
+    category: chronomancer
+    input: {own_charge: 3, history_len: 3, echo_active: true}
+    expect: {decision_equals: random_mix}
+
+  - id: chrono_mundane_mix
+    category: chronomancer
+    input: {seed: 7, living_enemies: 3}
+    expect:
+      decision_equals: random_mix
+      share_min: {attack: 0.35, defend: 0.25, ability: 0.10}
+      share_max: {attack: 0.55, defend: 0.45, ability: 0.30}
+
+  - id: chrono_counters_rewind
+    category: chronomancer
+    input: {own_charge: 3, living_enemies: 3, announced_ability: rewind}
+    expect: {wants_counter: true}
+
+  - id: chrono_counters_echo
+    category: chronomancer
+    input: {own_charge: 3, living_enemies: 3, announced_ability: echo_cast}
+    expect: {wants_counter: true}

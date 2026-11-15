@@ -23,6 +23,13 @@ type Expect struct {
 
 	// String enum (npc fixtures: mood).
 	MoodOneOf []string `yaml:"mood_one_of"`
+
+	// Rule decisions (chronomancer fixtures).
+	DecisionEquals  string             `yaml:"decision_equals"`
+	EchoTurnsEquals *int               `yaml:"echo_turns_equals"`
+	WantsCounter    *bool              `yaml:"wants_counter"`
+	ShareMin        map[string]float64 `yaml:"share_min"`
+	ShareMax        map[string]float64 `yaml:"share_max"`
 }
 
 // Fixture is one evaluation case loaded from YAML.

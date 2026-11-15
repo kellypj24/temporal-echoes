@@ -52,13 +52,19 @@ When an attack hits an enemy's weakness while it is not broken, the enemy shall 
 
 ### Requirement: Enemy archetypes
 
-Each enemy shall choose its action by a seeded weighted draw whose weights depend on its archetype (aggressive, defensive, tactical, berserker) and the state of the fight, and the choice shall carry no state between turns.
+Each enemy shall choose its action by a seeded weighted draw whose weights depend on its archetype (aggressive, defensive, tactical, berserker, chronomancer) and the state of the fight, and the choice shall carry no state between turns. A chronomancer's temporal rules, in `timeline-mechanics`, are applied before the draw.
 
 #### Scenario: Replay
 
 - GIVEN an enemy AI and a combat state
 - WHEN the AI is reseeded and asked again
 - THEN it returns the same action (`tests/unit/test_ai.py`)
+
+#### Scenario: No state of its own
+
+- GIVEN a Chronomancer's AI
+- WHEN its attributes are listed
+- THEN they are the enemy, the random generator and the base weights (`tests/unit/test_chronomancer.py`)
 
 ### Requirement: Flee
 
@@ -89,3 +95,7 @@ Every state change in combat shall be stored as an event in `game_events`, and n
 - GIVEN a completed combat
 - WHEN its events are read back in order
 - THEN they begin with combat-started, end with combat-ended, and account for every action taken (`tests/unit/test_combat_events.py`, `tests/unit/test_event_store.py`)
+
+## History
+
+- [261115-ctbrq](../../changes/archive/261115-ctbrq-chronomancer/) Chronomancer

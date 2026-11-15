@@ -39,6 +39,11 @@ def test_player_starting_hp_is_clamped(requested: int | None, expected: int) -> 
     assert player.max_hp == 520
 
 
-def test_only_the_gate_has_a_counterer() -> None:
-    assert get_encounter("gate").countering_enemy_ids == frozenset({"chronomancer"})
-    assert get_encounter("sundial").countering_enemy_ids == frozenset()
+def test_only_the_gate_has_a_chronomancer() -> None:
+    archetypes = {
+        enemy.id: enemy.archetype
+        for encounter in list_encounters()
+        for enemy in encounter.enemies
+        if enemy.archetype == "chronomancer"
+    }
+    assert archetypes == {"chronomancer": "chronomancer"}

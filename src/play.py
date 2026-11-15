@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from src.content import Encounter, get_encounter, list_encounters
 from src.core.combat import CombatContext, CombatOutcome
 from src.core.persistence import EventStore
-from src.core.temporal import DesignatedCounterPolicy
 from src.states.combat_cli import CombatCLI
 from src.ui.console import ConsoleRenderer
 
@@ -75,7 +74,6 @@ def build_combat(
         event_store=event_store,
         session_id=f"play-{run_id}",
         timeline_id="main",
-        counter_policy=DesignatedCounterPolicy(encounter.countering_enemy_ids),
     )
 
 

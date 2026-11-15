@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -46,6 +47,20 @@ func score(run *RunResult, expect Expect) []CheckResult {
 	// Enum check (npc fixtures with `mood` field)
 	if len(expect.MoodOneOf) > 0 {
 		checks = append(checks, checkMoodOneOf(fields, expect.MoodOneOf))
+	}
+
+	// Rule decisions (chronomancer fixtures)
+	if expect.DecisionEquals != "" {
+		checks = append(checks, checkDecisionEquals(fields, expect.DecisionEquals))
+	}
+	if expect.EchoTurnsEquals != nil {
+		checks = append(checks, checkEchoTurnsEquals(fields, *expect.EchoTurnsEquals))
+	}
+	if expect.WantsCounter != nil {
+		checks = append(checks, checkWantsCounter(fields, *expect.WantsCounter))
+	}
+	if len(expect.ShareMin) > 0 || len(expect.ShareMax) > 0 {
+		checks = append(checks, checkShares(fields, expect.ShareMin, expect.ShareMax))
 	}
 
 	return checks
@@ -163,6 +178,80 @@ func checkMoodOneOf(fields map[string]interface{}, allowed []string) CheckResult
 		Passed: false,
 		Detail: fmt.Sprintf("got %q, want one of %v", got, allowed),
 	}
+}
+
+func checkDecisionEquals(fields map[string]interface{}, want string) CheckResult {
+	got, ok := fields["decision"].(string)
+	if !ok {
+		return CheckResult{Name: "decision_equals", Passed: false, Detail: "decision field missing"}
+	}
+	if got != want {
+		return CheckResult{
+			Name:   "decision_equals",
+			Passed: false,
+			Detail: fmt.Sprintf("got %q, want %q", got, want),
+		}
+	}
+	return CheckResult{Name: "decision_equals", Passed: true}
+}
+
+func checkEchoTurnsEquals(fields map[string]interface{}, want int) CheckResult {
+	f, ok := fields["echo_turns"].(float64)
+	if !ok {
+		return CheckResult{Name: "echo_turns_equals", Passed: false, Detail: "echo_turns field missing"}
+	}
+	if int(f) != want {
+		return CheckResult{
+			Name:   "echo_turns_equals",
+			Passed: false,
+			Detail: fmt.Sprintf("got %d, want %d", int(f), want),
+		}
+	}
+	return CheckResult{Name: "echo_turns_equals", Passed: true}
+}
+
+func checkWantsCounter(fields map[string]interface{}, want bool) CheckResult {
+	got, ok := fields["wants_counter"].(bool)
+	if !ok {
+		return CheckResult{Name: "wants_counter", Passed: false, Detail: "wants_counter field missing"}
+	}
+	if got != want {
+		return CheckResult{
+			Name:   "wants_counter",
+			Passed: false,
+			Detail: fmt.Sprintf("got %t, want %t", got, want),
+		}
+	}
+	return CheckResult{Name: "wants_counter", Passed: true}
+}
+
+// checkShares bounds the share of each named action in the result's
+// `distribution`. An action absent from the distribution has share 0.
+func checkShares(fields map[string]interface{}, minV, maxV map[string]float64) CheckResult {
+	dist, ok := fields["distribution"].(map[string]interface{})
+	if !ok {
+		return CheckResult{Name: "shares", Passed: false, Detail: "distribution field missing"}
+	}
+	share := func(action string) float64 {
+		f, _ := dist[action].(float64)
+		return f
+	}
+	var problems []string
+	for action, lo := range minV {
+		if got := share(action); got < lo {
+			problems = append(problems, fmt.Sprintf("%s got %.2f, want >= %.2f", action, got, lo))
+		}
+	}
+	for action, hi := range maxV {
+		if got := share(action); got > hi {
+			problems = append(problems, fmt.Sprintf("%s got %.2f, want <= %.2f", action, got, hi))
+		}
+	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		return CheckResult{Name: "shares", Passed: false, Detail: strings.Join(problems, "; ")}
+	}
+	return CheckResult{Name: "shares", Passed: true}
 }
 
 func truncate(s string, n int) string {

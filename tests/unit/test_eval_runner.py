@@ -136,3 +136,43 @@ class TestCLI:
 @pytest.fixture(scope="module", autouse=True)
 def _ensure_runner_exists() -> None:
     assert RUNNER.exists(), f"Runner script missing at {RUNNER}"
+
+
+class TestChronomancerCategory:
+    """The chronomancer category runs game rules only: no narrator, no provider."""
+
+    def _decide(self, params: dict[str, object], provider: str = "mock") -> dict[str, object]:
+        payload = json.dumps({"category": "chronomancer", "params": params})
+        result = _run(["--input-json", payload], extra_env={"TEMPORAL_LLM_PROVIDER": provider})
+        assert result.returncode == 0, result.stdout + result.stderr
+        out = json.loads(result.stdout)
+        assert out["ok"] is True
+        return out["result"]  # type: ignore[no-any-return]
+
+    def test_hurt_chronomancer_rewinds(self) -> None:
+        result = self._decide({"own_hp_pct": 20, "own_charge": 1})
+        assert result == {"decision": "rewind"}
+
+    def test_lone_chronomancer_echoes_its_whole_history(self) -> None:
+        result = self._decide({"own_charge": 2, "history_len": 2})
+        assert result == {"decision": "echo_cast", "echo_turns": 2}
+
+    def test_mundane_mix_reports_a_distribution(self) -> None:
+        result = self._decide({"living_enemies": 2, "seed": 3})
+        assert result["decision"] == "random_mix"
+        distribution = result["distribution"]
+        assert isinstance(distribution, dict)
+        assert set(distribution) <= {"attack", "defend", "ability"}
+        assert abs(sum(distribution.values()) - 1.0) < 1e-9
+
+    def test_announced_cast_reports_the_counter_decision(self) -> None:
+        result = self._decide({"living_enemies": 2, "announced_ability": "echo_cast"})
+        assert result["wants_counter"] is True
+
+    def test_same_input_gives_the_same_output(self) -> None:
+        params = {"living_enemies": 3, "seed": 11}
+        assert self._decide(params) == self._decide(params)
+
+    def test_no_provider_is_constructed(self) -> None:
+        result = self._decide({"own_hp_pct": 20, "own_charge": 1}, provider="no-such-provider")
+        assert result["decision"] == "rewind"

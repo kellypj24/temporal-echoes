@@ -118,7 +118,7 @@ def test_quitting_ends_the_sequence() -> None:
 
 
 def test_same_seed_and_script_give_the_same_output() -> None:
-    lines = ["d", "r", "1", "1", "e", "2", "b", "2", "1"]
+    lines = ["d", "d", "d", "e", "1", "r", "1", "b", "2", "1"]
     runs = []
     for _ in range(2):
         screen = Screen()
@@ -167,3 +167,12 @@ def test_main_plays_from_stdin_and_survives_end_of_input(
 
     assert main(["sundial", "--seed", "5"]) == EXIT_OK
     assert "The Sundial Courtyard" in capsys.readouterr().out
+
+
+def test_the_gate_boss_rewinds_and_the_fight_still_ends() -> None:
+    screen = Screen()
+    result = play(get_encounter("gate"), read_input=Script([], then="a"), write=screen)
+
+    assert "The Chronomancer rewinds time!" in screen.text
+    assert screen.text.count("The Chronomancer rewinds time!") <= 2
+    assert result.outcome in {CombatOutcome.VICTORY, CombatOutcome.DEFEAT}

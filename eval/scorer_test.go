@@ -157,3 +157,73 @@ func allPassed(checks []CheckResult) bool {
 	}
 	return true
 }
+
+func boolPtr(b bool) *bool { return &b }
+
+func chronoResult(fields map[string]interface{}) *RunResult {
+	return &RunResult{OK: true, Result: fields}
+}
+
+func TestScore_Decision(t *testing.T) {
+	run := chronoResult(map[string]interface{}{"decision": "rewind"})
+	if !allPassed(score(run, Expect{DecisionEquals: "rewind"})) {
+		t.Errorf("expected decision_equals to pass")
+	}
+	if allPassed(score(run, Expect{DecisionEquals: "echo_cast"})) {
+		t.Errorf("expected decision_equals to fail on a different decision")
+	}
+	if allPassed(score(chronoResult(map[string]interface{}{}), Expect{DecisionEquals: "rewind"})) {
+		t.Errorf("expected decision_equals to fail when the field is missing")
+	}
+}
+
+func TestScore_EchoTurns(t *testing.T) {
+	run := chronoResult(map[string]interface{}{"decision": "echo_cast", "echo_turns": float64(3)})
+	if !allPassed(score(run, Expect{EchoTurnsEquals: intPtr(3)})) {
+		t.Errorf("expected echo_turns_equals to pass")
+	}
+	if allPassed(score(run, Expect{EchoTurnsEquals: intPtr(1)})) {
+		t.Errorf("expected echo_turns_equals to fail on a different window")
+	}
+	missing := chronoResult(map[string]interface{}{"decision": "rewind"})
+	if allPassed(score(missing, Expect{EchoTurnsEquals: intPtr(1)})) {
+		t.Errorf("expected echo_turns_equals to fail when the field is missing")
+	}
+}
+
+func TestScore_WantsCounter(t *testing.T) {
+	run := chronoResult(map[string]interface{}{"wants_counter": true})
+	if !allPassed(score(run, Expect{WantsCounter: boolPtr(true)})) {
+		t.Errorf("expected wants_counter to pass")
+	}
+	if allPassed(score(run, Expect{WantsCounter: boolPtr(false)})) {
+		t.Errorf("expected wants_counter false to fail against true")
+	}
+	if allPassed(score(chronoResult(map[string]interface{}{}), Expect{WantsCounter: boolPtr(false)})) {
+		t.Errorf("expected wants_counter to fail when the field is missing")
+	}
+}
+
+func TestScore_Shares(t *testing.T) {
+	run := chronoResult(map[string]interface{}{
+		"decision":     "random_mix",
+		"distribution": map[string]interface{}{"attack": 0.46, "defend": 0.34, "ability": 0.20},
+	})
+	within := Expect{
+		ShareMin: map[string]float64{"attack": 0.35},
+		ShareMax: map[string]float64{"attack": 0.55, "rewind": 0.0},
+	}
+	if !allPassed(score(run, within)) {
+		t.Errorf("expected shares within bounds to pass")
+	}
+	if allPassed(score(run, Expect{ShareMin: map[string]float64{"defend": 0.5}})) {
+		t.Errorf("expected share_min to fail")
+	}
+	if allPassed(score(run, Expect{ShareMax: map[string]float64{"ability": 0.1}})) {
+		t.Errorf("expected share_max to fail")
+	}
+	noDist := chronoResult(map[string]interface{}{"decision": "rewind"})
+	if allPassed(score(noDist, Expect{ShareMin: map[string]float64{"attack": 0.1}})) {
+		t.Errorf("expected shares to fail without a distribution")
+	}
+}

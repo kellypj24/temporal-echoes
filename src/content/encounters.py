@@ -89,9 +89,7 @@ class EnemySpec:
         shield_points: Break System shield; each weakness hit removes one.
         weaknesses: Damage types that chip the shield.
         archetype: AI behaviour ("aggressive", "defensive", "tactical",
-            "berserker").
-        counters: Whether this enemy Counter-Stops the player's temporal
-            casts when it has the charge to spare.
+            "berserker", "chronomancer").
     """
 
     id: str
@@ -104,7 +102,6 @@ class EnemySpec:
     shield_points: int
     weaknesses: tuple[DamageType, ...] = (DamageType.PHYSICAL,)
     archetype: str = "aggressive"
-    counters: bool = False
 
     def build(self) -> Enemy:
         """
@@ -162,11 +159,6 @@ class Encounter:
             A `(player, enemies)` pair; enemies are at full HP.
         """
         return self.player.build(hp=player_hp), [spec.build() for spec in self.enemies]
-
-    @property
-    def countering_enemy_ids(self) -> frozenset[str]:
-        """Return the ids of enemies that Counter-Stop temporal casts."""
-        return frozenset(spec.id for spec in self.enemies if spec.counters)
 
 
 _SUNDIAL = Encounter(
@@ -270,8 +262,7 @@ _GATE = Encounter(
             defense=40,
             speed=34,
             shield_points=3,
-            archetype="tactical",
-            counters=True,
+            archetype="chronomancer",
         ),
         EnemySpec(
             id="acolyte_1",
