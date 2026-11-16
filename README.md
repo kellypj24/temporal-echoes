@@ -19,7 +19,7 @@ Temporal Echoes is a turn-based RPG inspired by classics like Chrono Trigger and
 ## 🏗️ Architecture
 
 ### Core Governance
-All development follows **15 immutable principles** defined in `.cursor/rules/CONSTITUTION.md`:
+All development follows the **15 principles** in [`CLAUDE.md`](CLAUDE.md):
 - Event sourcing integrity (append-only)
 - Dependency injection patterns
 - Type safety requirements
@@ -32,16 +32,6 @@ All development follows **15 immutable principles** defined in `.cursor/rules/CO
 ### Project Structure
 ```
 temporal-echoes/
-├── .cursor/rules/          # Cursor MDC agent rules + CONSTITUTION
-│   ├── CONSTITUTION.md    # ⭐ 15 immutable development principles
-│   ├── architect-supervisor.mdc
-│   ├── ai-integration-supervisor.mdc
-│   ├── data-worker.mdc
-│   ├── game-logic-worker.mdc
-│   ├── ai-worker.mdc
-│   ├── pygame-worker.mdc
-│   ├── prompt-worker.mdc
-│   └── architecture-worker.mdc
 ├── src/                    # Game engine
 │   ├── core/              # State machines, event store
 │   ├── analytics/         # dbt integration bridge
@@ -196,64 +186,13 @@ just dbt-docs
 just dbt-full
 ```
 
-## 🤖 Cursor MDC Agent Rules & Spec-Driven Development
-
-This project uses a **Spec-Driven Development (SDD)** workflow with comprehensive Cursor MDC agent rules:
-
-### Core Governance
-- **`CONSTITUTION.md`**: 15 immutable development principles
-  - Architecture, Code Quality, AI Integration, Database, Performance
-  - Deviation protocol for justified violations
-  - Constitution checkpoints at all milestones
-
-### Supervisors (Always Apply)
-- **`architect-supervisor.mdc`**: System design orchestration, **SDD workflow enforcement**
-  - **Critical Rule**: NO implementation until research.md and decisions.md complete
-  - Constitution compliance checkpoints
-- **`ai-integration-supervisor.mdc`**: AI/LLM coordination, prompt engineering oversight
-
-### Workers (Auto-attach to files)
-- **`game-logic-worker.mdc`**: State machines, combat, player mechanics (`src/states/`, `src/core/`)
-- **`ai-worker.mdc`**: Ollama API integration (`src/ai/`)
-- **`data-worker.mdc`**: SQLite/dbt/DuckDB operations (`src/core/persistence.py`, `dbt/`)
-- **`pygame-worker.mdc`**: Rendering, sprites, UI (`src/ui/`, `src/entities/`)
-- **`prompt-worker.mdc`**: Prompt templates and management (`src/ai/prompts/`)
-
-### Manual Invocation
-- **`architecture-worker.mdc`**: Design pattern selection, refactoring guidance (`@architecture-worker`)
-
-### Using MDC Rules
-
-In Cursor, the appropriate workers will automatically attach based on the files you're editing. For architecture questions, manually invoke:
-
-```
-@architecture-worker Should we use ECS for entity management?
-```
-
-### Spec-Driven Development Workflow
-
-Every development phase follows this 4-step process:
-
-1. **🔍 Research** (`research.md`) - Investigate unknowns, validate tech stack
-2. **📋 Decisions** (`decisions.md`) - Document architectural decisions (ADR format)
-3. **🛠️ Implementation** (`PLAN.md`) - Execute with constitution compliance
-4. **✅ Validation** - Verify success criteria and retrospective
-
 ## 🗂️ Development workflow
 
 Work is specified with [Grove](https://github.com/mascah/grove). `grove/specs/` holds the
 agreed behavior of each capability; `grove/changes/` holds approved future work, and a
 change is approved by merging its proposal. Implementing a change and folding it into the
-maintained spec land in one merge. `just check` ends with `grove check`. Phase plans from
-before Grove are in `docs/archive/assignments/`.
-
-### Constitution Compliance
-Read `.cursor/rules/CONSTITUTION.md` for the **15 immutable principles** that govern all development. Constitution checkpoints occur at:
-- Before creating phase plan
-- Before starting implementation  
-- During each step execution
-- Before code review
-- Before merging to main
+maintained spec land in one merge. `just check` ends with `grove check`. Phase plans, Cursor
+rules and setup notes from before Grove are in `docs/archive/`.
 
 ## 🎯 Core Game Mechanics
 
@@ -369,22 +308,12 @@ class GameEvent:
 
 This is a personal learning project, but contributions are welcome! Please:
 
-1. **Read the Constitution**: Review `.cursor/rules/CONSTITUTION.md` for development principles
+1. Read the principles in [`CLAUDE.md`](CLAUDE.md)
 2. Check existing issues or create a new one
-3. Fork the repository
-4. Create a feature branch following Git conventions: `type/phase-short-description`
-5. Follow the **Spec-Driven Development workflow**:
-   - Complete research.md if introducing new patterns
-   - Document decisions in decisions.md
-   - Ensure constitution compliance
-6. Follow code quality standards:
-   - Type hints on all functions
-   - >= 80% test coverage
-   - `just lint` passes
-7. Submit a pull request with:
-   - Constitution compliance verification
-   - Decision records (if applicable)
-   - Test coverage report
+3. Fork the repository and create a feature branch
+4. Propose behavior changes as a Grove change (`grove/changes/`) before implementing
+5. Type hints on all functions, >= 80% test coverage, `just check` passes
+6. Submit a pull request
 
 ## 📝 License
 
