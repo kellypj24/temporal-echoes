@@ -134,6 +134,3 @@ with `grove check`. Project rules for each step are in `grove.yaml`.
 
 ## Deviation Protocol
 Any deviation from constitution requires: Justification -> Documentation in the change's `proposal.md` -> Human approval -> Tech debt issue -> Remediation plan.
-
-## Reference Docs
-Full detailed patterns and code examples are in `.cursor/rules/*.mdc` files.

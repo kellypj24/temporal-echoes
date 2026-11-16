@@ -23,4 +23,4 @@ dbt-DuckDB OLAP layer for gameplay analytics. Sources from SQLite event store.
 - DuckDB (`data/analytics.duckdb`): OLAP reads, analytics queries, columnar storage
 
 ## Reference
-Full patterns and schemas: `.cursor/rules/data-worker.mdc`
+Pre-Grove patterns and schemas (history): `docs/archive/cursor-rules/data-worker.mdc`

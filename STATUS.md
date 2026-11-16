@@ -3,7 +3,7 @@
 Current state only; history is in git and the PRs. Update this file in the same PR as the
 work it describes.
 
-_Updated 2026-11-15._
+_Updated 2026-11-16._
 
 ## Now
 
@@ -28,8 +28,6 @@ _Updated 2026-11-15._
   the 1-charge bait. Leave, or make the undo stronger.
 - Whether `just run` should start the game instead of the Phase 1 demo loop.
 - Whether an escaped fight should let the sequence continue; today it ends it.
-- `PROJECT_SUMMARY.md`, `SETUP_GUIDE.md` and `.cursor/rules/` still describe the
-  `assignments/` workflow: rewrite or delete.
 
 ## Decided
 
