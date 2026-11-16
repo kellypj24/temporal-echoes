@@ -329,16 +329,16 @@ class TestEnemyBreakSystem:
         assert enemy.is_broken is True
         assert enemy.break_turns_remaining == 1
 
-    def test_take_damage_while_broken_bonus_damage(self):
-        """Test taking damage while broken applies 1.5x multiplier."""
+    def test_take_damage_while_broken_applies_no_second_bonus(self):
+        """The Break bonus is applied once, by DamageCalculator, not again here."""
         enemy = create_test_enemy(hp=200)
         enemy.trigger_break()  # Manually break
 
         result = enemy.take_damage(100, DamageType.PHYSICAL)
 
-        assert result.damage == 150  # 100 * 1.5
-        assert enemy.hp == 50
-        assert result.multipliers["break"] == 1.5
+        assert result.damage == 100
+        assert enemy.hp == 100
+        assert "break" not in result.multipliers
 
     def test_weakness_while_broken_no_shield_damage(self):
         """Test hitting weakness while broken doesn't reduce shield further."""

@@ -26,7 +26,7 @@ import json
 import math
 import random
 from collections import defaultdict, deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 # Echo Cast constants (Phase 3 Step 5). Named so tuning is one line — see
 # DESIGN.md Open Question 1 (flat 0.5 scale vs. scaling by N or recency).
 ECHO_CAST_COST = 2  # flat charge cost, regardless of `turns`
-ECHO_DAMAGE_SCALE = 0.5
+ECHO_DAMAGE_SCALE = 1.0  # an echo repeats the recorded damage in full
 MAX_ECHO_TURNS = 3  # mirrors the rewind/charge cap
 
 # Counter-Stop constants (Phase 3 Step 6).
@@ -277,10 +277,27 @@ class ArchetypeCounterPolicy:
 
     The default policy of ``CombatContext``. Enemy side: the first
     eligible enemy, in the deterministic order given, whose AI wants to
-    counter. Player side: never counters, since nothing asks the player.
-    With no Chronomancer present every AI declines, so this behaves as
-    ``NeverCounterPolicy``. Holds no state and draws no random number.
+    counter. Player side: counters only if the player is asked and says
+    yes, through the ``ask_player`` callable a front end supplies; with
+    none, the player never counters. With no Chronomancer present every
+    AI declines, so this behaves as ``NeverCounterPolicy``. Draws no
+    random number.
+
+    Attributes:
+        _ask_player: Asked when an enemy's cast is announced and the
+            player is eligible to respond; True means counter.
     """
+
+    def __init__(self, ask_player: Callable[[TemporalAnnouncement], bool] | None = None) -> None:
+        """
+        Initialise the policy.
+
+        Args:
+            ask_player: Called with an enemy's announced cast when the
+                player may Counter-Stop it; returns True to counter.
+                None means the player is never asked.
+        """
+        self._ask_player = ask_player
 
     def decide(
         self,
@@ -297,8 +314,15 @@ class ArchetypeCounterPolicy:
             eligible: Combatants who may respond, in deterministic order.
 
         Returns:
-            The first eligible enemy whose AI wants to counter, or None.
+            The first eligible enemy whose AI wants to counter; the
+            player, if asked and willing; otherwise None.
         """
+        if announcement.caster_id != combat.player.id:
+            player = next((c for c in eligible if c is combat.player), None)
+            if player is not None and self._ask_player is not None:
+                return player if self._ask_player(announcement) else None
+            return None
+
         state = combat.ai_state()
         for candidate in eligible:
             ai = combat._enemy_ais.get(candidate.id)
@@ -438,9 +462,16 @@ class TemporalSystem:
         combat: CombatContext,
         actor: Combatant,
         turns: int = 1,
+        cost: int | None = None,
     ) -> RewindResult | CounterStopResult:
         """
         Rewind combat ``turns`` turns back on a new branch.
+
+        The cast costs ``cost`` charge, by default 1 per turn rewound, and
+        the cost stays spent: after replay rebuilds the earlier state, the
+        caster's charge is that state's value less the cost (never below
+        0), recorded as a second CHARGE_SPENT on the new branch so later
+        replays rebuild it.
 
         Single-turn shipped in Step 3; multi-turn (``turns > 1``) in Step 4.
         Each rewound turn costs 1 charge, so the charge pool bounds depth.
@@ -477,7 +508,8 @@ class TemporalSystem:
             combat: The active CombatContext to rewind.
             actor: The combatant spending charge to trigger the rewind
                 (typically the player).
-            turns: Number of turns to rewind (>= 1; bounded by available charge).
+            turns: Number of combatant turns to rewind (>= 1).
+            cost: Charge the cast costs (>= 1). None means ``turns``.
 
         Returns:
             RewindResult with from_turn, to_turn, new_branch_id,
@@ -505,9 +537,14 @@ class TemporalSystem:
         # Multi-turn rewind (turns > 1) is supported as of Step 4; it costs
         # `turns` charges, so the per-combat charge cap naturally bounds depth.
 
-        if actor.temporal_charge < turns:
+        if cost is None:
+            cost = turns
+        if cost < 1:
+            raise ValueError(f"cost must be at least 1, got {cost}")
+
+        if actor.temporal_charge < cost:
             raise InsufficientChargeError(
-                f"Insufficient temporal charge: have {actor.temporal_charge}, need {turns}"
+                f"Insufficient temporal charge: have {actor.temporal_charge}, need {cost}"
             )
 
         target_turn = combat._total_turns - turns
@@ -556,13 +593,13 @@ class TemporalSystem:
         charge_event = self._event_builder.charge_spent(
             turn_number=combat._total_turns,
             actor_id=actor.id,
-            amount=turns,
+            amount=cost,
             ability="rewind",
         )
         self._event_store.append_event(charge_event)
 
         # --- Step 4: Decrement actor charge ---
-        actor.spend_charge(turns)
+        actor.spend_charge(cost)
 
         # --- Step 5: Offer the Counter-Stop response window ---
         counter_result = self._offer_counter_window(
@@ -570,7 +607,7 @@ class TemporalSystem:
             caster=actor,
             ability="rewind",
             magnitude=turns,
-            caster_charge_lost=turns,
+            caster_charge_lost=cost,
         )
         if counter_result is not None:
             return counter_result
@@ -597,13 +634,32 @@ class TemporalSystem:
         )
         self._event_store.append_event(rewind_event)
 
+        # --- Step 8b: The cost stays spent on the new branch ---
+        # Replay rebuilt the caster's charge as it stood at the target turn;
+        # the spend recorded in step 3 sits past the fork and was not
+        # applied. Deduct the cost again here, as an event on the new
+        # branch at the target turn, so the rewind is paid for and any
+        # later replay through this point pays for it too.
+        carried = min(cost, actor.temporal_charge)
+        if carried > 0:
+            self._event_store.append_event(
+                self._event_builder.charge_spent(
+                    turn_number=target_turn,
+                    actor_id=actor.id,
+                    amount=carried,
+                    ability="rewind",
+                    carried=True,
+                )
+            )
+            actor.spend_charge(carried)
+
         # --- Step 9: Return result ---
         return RewindResult(
             from_turn=from_turn,
             to_turn=target_turn,
             new_branch_id=new_branch_id,
             events_replayed=events_replayed,
-            charge_spent=turns,
+            charge_spent=cost,
         )
 
     # -------------------------------------------------------------------------
@@ -1129,6 +1185,7 @@ class TemporalSystem:
                 "ref": c,
                 "hp": c.hp,
                 "temporal_charge": c.temporal_charge,
+                "is_defending": c.is_defending,
             }
             if isinstance(c, Player):
                 entry["boost_points"] = c.boost_points
@@ -1168,6 +1225,7 @@ class TemporalSystem:
                 combatant_id: list(history)
                 for combatant_id, history in combat._action_history.items()
             },
+            "player_turn_starts": list(combat._player_turn_starts),
         }
 
     def _restore_rollback_state(
@@ -1193,6 +1251,7 @@ class TemporalSystem:
             c = entry["ref"]
             c.hp = entry["hp"]
             c.temporal_charge = entry["temporal_charge"]
+            c.is_defending = entry["is_defending"]
             if isinstance(c, Player):
                 c.boost_points = entry["boost_points"]
             if isinstance(c, Enemy):
@@ -1208,6 +1267,7 @@ class TemporalSystem:
 
         # 3. Restore turn counters, phase, turn_order, turn_index
         combat._total_turns = snapshot["total_turns"]
+        combat._player_turn_starts = list(snapshot["player_turn_starts"])
         combat._round_number = snapshot["round_number"]
         combat._turn_index = snapshot["turn_index"]
         combat._turn_order = snapshot["turn_order"]
@@ -1333,7 +1393,11 @@ class TemporalSystem:
         combat._turn_order = []
         combat._phase = CombatPhase.ROUND_START
 
-        # --- Reset echo + action-history read-model state (Step 5) ---
+        # --- Reset read models rebuilt from events ---
+        combat.player.is_defending = False
+        for enemy in combat.enemies:
+            enemy.is_defending = False
+        combat._player_turn_starts = []
         combat._active_echoes = {}
         combat._action_history = defaultdict(lambda: deque(maxlen=MAX_ECHO_TURNS))
 
@@ -1403,6 +1467,11 @@ class TemporalSystem:
             active = next((e for e in combat.enemies if e.id == active_id), None)
             if active is not None and active.is_alive:
                 active.process_turn_end()
+            # A defend lasts until the defender's next turn begins.
+            if active is not None:
+                active.is_defending = False
+            elif active_id == combat.player.id:
+                combat.player.is_defending = False
             if "round_number" in data:
                 combat._round_number = data["round_number"]
             elif turn_number >= 1:
@@ -1421,6 +1490,11 @@ class TemporalSystem:
 
             actor = self._find_combatant(combat, actor_id)
             target = self._find_combatant(combat, target_id) if target_id else None
+            # Acting ends the actor's own defend (the turn the player takes
+            # straight after a rewind has no TURN_STARTED to do it).
+            actor.is_defending = False
+            if actor is combat.player:
+                combat._player_turn_starts.append(data.get("turn_number", 1) - 1)
 
             if action_type == "attack" and target is not None and damage_dealt is not None:
                 defender_weaknesses: list[DamageType] = []
@@ -1438,6 +1512,8 @@ class TemporalSystem:
                     defender_is_broken=defender_is_broken,
                 )
 
+                if target.is_defending:
+                    damage_result.damage = max(1, damage_result.damage // 2)
                 # Determinism check: recomputed damage must match recorded
                 assert damage_result.damage == damage_dealt, (
                     f"Replay determinism failure: recomputed damage "
@@ -1454,6 +1530,8 @@ class TemporalSystem:
             elif action_type == "flee":
                 # Flee draws 1 RNG value — consume it to stay in sync
                 combat._rng.randint(1, 100)
+            elif action_type == "defend":
+                actor.is_defending = True
 
             # defend: no RNG, no state change beyond what's already tracked
 
@@ -1483,12 +1561,23 @@ class TemporalSystem:
             combatant = self._find_combatant(combat, combatant_id)
             if isinstance(combatant, Player):
                 combatant.gain_bp(amount_gained)
+            # Emitted once at every round start. Carrying the round here
+            # keeps the counter right when a rewind lands between a round's
+            # start and its first turn.
+            if "round_number" in data:
+                combat._round_number = data["round_number"]
 
         elif etype == EventTypes.CHARGE_SPENT:
             actor_id = data.get("actor_id", "")
             amount = data.get("amount", 0)
             combatant = self._find_combatant(combat, actor_id)
             combatant.spend_charge(amount)
+            if data.get("ability") == "echo_cast":
+                # Casting Echo is the caster's turn: it ends a defend and,
+                # for the player, counts as a turn taken.
+                combatant.is_defending = False
+                if combatant is combat.player:
+                    combat._player_turn_starts.append(data.get("turn_number", 1) - 1)
 
         elif etype == EventTypes.CHARGE_REGENERATED:
             actor_id = data.get("actor_id", "")

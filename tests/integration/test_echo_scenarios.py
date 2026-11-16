@@ -20,6 +20,7 @@ replay window (turn_number > to_turn), so replay never revisits it.
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -27,6 +28,7 @@ from src.core.ai import CombatAction
 from src.core.combat import CombatContext, CombatPhase
 from src.core.events import EventTypes
 from src.core.exceptions import RewindReplayError
+from src.core.temporal import ECHO_DAMAGE_SCALE
 from tests.fixtures.combat_fixtures import create_combat_context
 from tests.fixtures.entity_fixtures import create_test_enemy, create_test_player
 
@@ -124,13 +126,15 @@ class TestFullCombatWithEchoCast:
     def test_full_combat_with_echo_cast_two(self) -> None:
         """
         3 attacks -> cast(2) -> 2 turns: the echo replays the last 2 attacks
-        at half damage, with ECHO_ACTED events on the current branch.
+        at scaled damage, with ECHO_ACTED events on the current branch.
         """
         combat = _tanky_combat()
 
         _play_n_player_turns(combat, 3, _attack())
         history = list(combat._action_history["player_1"])
-        expected_scaled = [max(1, entry.damage_dealt * 5 // 10) for entry in history[-2:]]
+        expected_scaled = [
+            max(1, math.floor(entry.damage_dealt * ECHO_DAMAGE_SCALE)) for entry in history[-2:]
+        ]
 
         _play_n_player_turns(combat, 1, _echo_cast(turns=2))
         assert "player" in combat._active_echoes

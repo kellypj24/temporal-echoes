@@ -7,27 +7,25 @@ _Updated 2026-11-15._
 
 ## Now
 
-- Playable: `just play` runs three authored fights in the terminal, wounds carried;
-  `just play <id>` plays one. Spec: `grove/specs/terminal-game/`.
-- The gate's boss is a Chronomancer: rewinds when hurt (twice at most), echoes when alone,
-  counters every cast she can. Rules: `grove/specs/timeline-mechanics/`.
-- Rewinds now work repeatedly and across shield breaks; 600 random-input games ran with no
-  replay error.
-- Not yet a game: attacking every turn still wins all three fights in most seeds.
+- Playable and tuned: `just play` runs three authored fights in the terminal, wounds
+  carried. Attack-only loses the gate; the time abilities decide it.
+- Balance is held by scripted players (`tests/fixtures/autopilot.py`,
+  `tests/integration/test_balance.py`); `just balance` prints their win rates. At 100
+  seeds: attack-only clears 0, good play without time abilities 36, with them 76.
+- Nobody has played the tuned sequence by hand yet. The measures are of scripts.
+- Specs: `grove/specs/` (`combat`, `timeline-mechanics`, `terminal-game`).
 
 ## Next
 
-1. `encounter-balance`: tune so plain attacks lose the gate fight. Inputs, all recorded in
-   the archived `chronomancer` change's `implementation.md`:
-   - a rewind refunds its own charge, for both sides;
-   - a rewind's unit is one combatant's turn, not a round;
-   - damage on a broken enemy is multiplied by 1.5 twice;
-   - defend changes no state, though the help text says it halves damage;
-   - the Chronomancer almost never meets her Echo condition.
+1. Play it. `just play`, then note what feels wrong; the scripts cannot tell.
+2. Decide the two open questions the tuning raised (below).
 
 ## Open decisions
 
-- Whether the player is offered a Counter-Stop against the Chronomancer's casts.
+- Echo damage went from half to full so that time abilities decide the gate. Keep, or
+  find the difference elsewhere.
+- Rewind as an undo is not worth its charge to a scripted player; rewinds are almost all
+  the 1-charge bait. Leave, or make the undo stronger.
 - Whether `just run` should start the game instead of the Phase 1 demo loop.
 - Whether an escaped fight should let the sequence continue; today it ends it.
 - `PROJECT_SUMMARY.md`, `SETUP_GUIDE.md` and `.cursor/rules/` still describe the

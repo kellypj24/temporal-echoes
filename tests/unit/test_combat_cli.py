@@ -5,8 +5,9 @@ from collections.abc import Iterable
 from src.content import Encounter, get_encounter
 from src.core.combat import CombatContext, CombatOutcome
 from src.core.persistence import EventStore
+from src.core.temporal import COUNTER_STOP_COST, ArchetypeCounterPolicy
 from src.play import build_combat
-from src.states.combat_cli import PROMPT_COMMAND, CombatCLI
+from src.states.combat_cli import PROMPT_COMMAND, PROMPT_COUNTER, CombatCLI
 from src.ui.console import ConsoleRenderer
 from tests.fixtures.script_fixtures import Screen, Script
 
@@ -105,19 +106,23 @@ def test_boost_asks_for_a_target_when_there_are_several() -> None:
     assert combat.enemies[0].hp == combat.enemies[0].max_hp
 
 
-def test_rewind_shows_the_earlier_board_and_keeps_the_turn() -> None:
+def test_rewind_returns_to_the_start_of_the_players_last_turn_and_keeps_the_turn() -> None:
     _, screen, script, combat = _run("gate", ["d", "r", "1", "q"])
 
-    assert "Time folds back 1 turn(s) onto branch 1" in screen.text
+    assert "Time folds back to the start of your turn 1 ago" in screen.text
     rewind_prompt = next(i for i, p in enumerate(script.prompts) if "Rewind" in p)
     assert script.prompts[rewind_prompt + 1] == PROMPT_COMMAND
-    # One turn back is the end of round 1: round 2's Boost Point and charge are undone.
+    # Back at the start of round 1, before the defend and everything after it.
     assert combat.round_number == 1
+    assert combat._total_turns == 0
+    assert combat.player.hp == combat.player.max_hp
     assert combat.player.boost_points == 1
-    assert combat.player.temporal_charge == 1
+    assert not combat.player.is_defending
+    # Round 1's single charge, less the 1 the rewind cost.
+    assert combat.player.temporal_charge == 0
 
 
-def test_rewind_without_charge_and_with_bad_depth_is_refused() -> None:
+def test_rewind_without_charge_or_a_turn_to_undo_is_refused() -> None:
     encounter = get_encounter("sundial")
     combat = build_combat(encounter, encounter.seed, EventStore(":memory:"))
     screen = Screen()
@@ -125,18 +130,93 @@ def test_rewind_without_charge_and_with_bad_depth_is_refused() -> None:
 
     def read(prompt: str) -> str:
         asked.append(prompt)
-        if len(asked) == 1:
+        step = len(asked)
+        if step == 1:
             combat.player.temporal_charge = 0
             return "r"
-        if len(asked) == 2:
+        if step == 2:
             combat.player.temporal_charge = 1
             return "r"
-        return "5" if len(asked) == 3 else "q"
+        if step == 3:
+            return "d"
+        if step == 4:
+            return "r"
+        return "5" if step == 5 else "q"
 
     CombatCLI(combat, ConsoleRenderer(write=screen), read_input=read).run()
 
     assert "No temporal charge" in screen.text
+    assert "Nothing to rewind" in screen.text
     assert "Enter a number from 1 to 1." in screen.text
+
+
+def test_player_is_offered_a_counter_and_can_take_it() -> None:
+    encounter = get_encounter("gate")
+    screen = Screen()
+    answers: list[str] = []
+    asked: list[str] = []
+    box: list[CombatCLI] = []
+    combat = build_combat(
+        encounter,
+        encounter.seed,
+        EventStore(":memory:"),
+        counter_policy=ArchetypeCounterPolicy(ask_player=lambda a: box[0].ask_counter(a)),
+    )
+    mage = combat.enemies[0]
+
+    def read(prompt: str) -> str:
+        asked.append(prompt)
+        if prompt == PROMPT_COUNTER.format(cost=COUNTER_STOP_COST):
+            answers.append("y")
+            return "y"
+        if answers:
+            return "q"
+        # Hold 3 charge and leave her hurt with 1: she will try to rewind.
+        combat.player.temporal_charge = 3
+        mage.hp = mage.max_hp // 4
+        mage.temporal_charge = 1
+        return "d"
+
+    box.append(CombatCLI(combat, ConsoleRenderer(write=screen), read_input=read))
+    box[0].run()
+
+    assert answers == ["y"]
+    assert "The Chronomancer begins to rewind time." in screen.text
+    assert "rewinds time!" not in screen.text
+    assert combat._current_branch_id == 0
+    assert combat.player.temporal_charge <= 1
+
+
+def test_declining_the_counter_lets_the_cast_through() -> None:
+    encounter = get_encounter("gate")
+    screen = Screen()
+    box: list[CombatCLI] = []
+    combat = build_combat(
+        encounter,
+        encounter.seed,
+        EventStore(":memory:"),
+        counter_policy=ArchetypeCounterPolicy(ask_player=lambda a: box[0].ask_counter(a)),
+    )
+    mage = combat.enemies[0]
+    seen = {"counter": False}
+
+    def read(prompt: str) -> str:
+        if "Counter-Stop" in prompt:
+            seen["counter"] = True
+            return ""
+        if seen["counter"]:
+            return "q"
+        combat.player.temporal_charge = 3
+        mage.hp = mage.max_hp // 4
+        mage.temporal_charge = 1
+        return "d"
+
+    box.append(CombatCLI(combat, ConsoleRenderer(write=screen), read_input=read))
+    box[0].run()
+
+    assert seen["counter"]
+    assert "The Chronomancer rewinds time!" in screen.text
+    assert combat._current_branch_id == 1
 
 
 def test_echo_cast_spends_the_turn_and_the_echo_acts_later() -> None:

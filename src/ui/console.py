@@ -204,7 +204,8 @@ class ConsoleRenderer:
             player: The player combatant.
 
         Returns:
-            One formatted line with HP bar, Boost Points, and charge.
+            One formatted line with HP bar, Boost Points, charge, and a
+            DEF marker while the player is defending.
         """
         bar = self._bar(player.hp, player.max_hp, 20)
         hp = f"{player.hp:>4}/{player.max_hp:<4}"
@@ -215,9 +216,10 @@ class ConsoleRenderer:
             _CHARGE_FULL,
             _CHARGE_EMPTY,
         )
+        guard = f"  {self._paint('DEF', 'cyan')}" if player.is_defending else ""
         return (
             f"  {self._paint(player.name.ljust(18), 'bold')} {bar} {hp}  "
-            f"BP {self._paint(bp, 'yellow')}  TC {self._paint(charge, 'magenta')}"
+            f"BP {self._paint(bp, 'yellow')}  TC {self._paint(charge, 'magenta')}{guard}"
         )
 
     def _enemy_line(self, index: int, enemy: Enemy) -> str:
@@ -229,7 +231,8 @@ class ConsoleRenderer:
             enemy: The enemy to describe.
 
         Returns:
-            One formatted line with HP bar, shield pips, and break state.
+            One formatted line with HP bar, temporal charge, shield pips,
+            break state, and a DEF marker while the enemy is defending.
         """
         label = f"{index}) {enemy.name}".ljust(18)
         if not enemy.is_alive:
@@ -243,7 +246,14 @@ class ConsoleRenderer:
             if enemy.is_broken
             else self._paint(f"SH {shield or '—'}", "blue")
         )
-        return f"  {label} {bar} {hp}  {suffix}"
+        charge = _pips(
+            enemy.temporal_charge,
+            enemy.max_temporal_charge,
+            _CHARGE_FULL,
+            _CHARGE_EMPTY,
+        )
+        guard = f"  {self._paint('DEF', 'cyan')}" if enemy.is_defending else ""
+        return f"  {label} {bar} {hp}  TC {self._paint(charge, 'magenta')}  {suffix}{guard}"
 
     def _bar(self, current: int, maximum: int, width: int) -> str:
         """
