@@ -1,6 +1,7 @@
 """End-to-end tests for the terminal game entry point."""
 
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -171,8 +172,23 @@ def test_main_plays_from_stdin_and_survives_end_of_input(
 
 def test_the_gate_boss_rewinds_and_the_fight_still_ends() -> None:
     screen = Screen()
-    result = play(get_encounter("gate"), read_input=Script([], then="a"), write=screen)
+    gate = get_encounter("gate")
+    sturdy = replace(gate, player=replace(gate.player, max_hp=100_000))
+
+    asked = {"n": 0}
+
+    def read(prompt: str) -> str:
+        # Attack her while she stands and never counter, so she is driven
+        # below 40 percent and left free to rewind.
+        asked["n"] += 1
+        if asked["n"] > 2000:
+            return "q"
+        if "Counter-Stop" in prompt:
+            return "n"
+        return "a" if "The Chronomancer has been defeated!" in screen.text else "1"
+
+    result = play(sturdy, read_input=read, write=screen)
 
     assert "The Chronomancer rewinds time!" in screen.text
     assert screen.text.count("The Chronomancer rewinds time!") <= 2
-    assert result.outcome in {CombatOutcome.VICTORY, CombatOutcome.DEFEAT}
+    assert result.outcome is CombatOutcome.VICTORY

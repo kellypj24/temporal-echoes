@@ -14,6 +14,7 @@ charge precisely without playing out full combats.
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -26,7 +27,13 @@ from src.core.exceptions import (
     EchoUnavailableError,
     InsufficientChargeError,
 )
-from src.core.temporal import ECHO_CAST_COST, Echo, EchoCastResult, EchoSourceAction
+from src.core.temporal import (
+    ECHO_CAST_COST,
+    ECHO_DAMAGE_SCALE,
+    Echo,
+    EchoCastResult,
+    EchoSourceAction,
+)
 from src.entities import Combatant, DamageType
 from tests.fixtures.combat_fixtures import create_combat_context
 from tests.fixtures.entity_fixtures import create_test_enemy, create_test_player
@@ -341,8 +348,8 @@ class TestEchoActing:
         assert acted_events == []
         assert combat._active_echoes["player"].next_index == 0
 
-    def test_echo_attack_deals_floor_half_recorded_damage(self) -> None:
-        """Echo attack damage is floor(recorded damage * 0.5)."""
+    def test_echo_attack_deals_the_recorded_damage_scaled(self) -> None:
+        """Echo attack damage is floor(recorded damage * ECHO_DAMAGE_SCALE)."""
         combat = _fresh_combat(enemy_hp=5000)
         combat._total_turns = 5
         _register_echo(
@@ -357,7 +364,8 @@ class TestEchoActing:
         hp_before = combat.enemies[0].hp
         combat._temporal.execute_echo_turn(combat, combat.player)
 
-        assert hp_before - combat.enemies[0].hp == 101  # floor(203 * 0.5) = 101
+        assert hp_before - combat.enemies[0].hp == math.floor(203 * ECHO_DAMAGE_SCALE)
+        assert ECHO_DAMAGE_SCALE == 1.0
 
     def test_echo_attack_minimum_one_damage(self) -> None:
         """Echo attack damage floors to 0 but the minimum floor is 1."""
@@ -523,7 +531,7 @@ class TestEchoActing:
         payload = json.loads(acted.event_data)
 
         assert payload["target_id"] == "enemy_1"
-        assert payload["damage_dealt"] == 100
+        assert payload["damage_dealt"] == math.floor(200 * ECHO_DAMAGE_SCALE)
         assert payload["source_turn"] == 3
         assert payload["action_type"] == "attack"
 

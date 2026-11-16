@@ -44,6 +44,10 @@ fmt:
 play *args:
     uv run python -m src.play {{ args }}
 
+# Win rates of the scripted players over seeds (default 100): `just balance 200`
+balance *args:
+    PYTHONPATH=. uv run python scripts/balance.py {{ args }}
+
 # Run the Phase 1 architecture demo loop
 run:
     uv run python -m src.main

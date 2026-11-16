@@ -21,7 +21,7 @@ from src.core.combat_events import CombatEventBuilder
 from src.core.combat_logger import CombatLogger
 from src.core.damage import DamageCalculator
 from src.core.events import EventTypes, GameEvent
-from src.core.exceptions import TemporalError
+from src.core.exceptions import RewindBoundaryError, TemporalError
 from src.core.persistence import EventStore
 from src.core.temporal import (
     MAX_ECHO_TURNS,
@@ -67,6 +67,9 @@ _ARCHETYPE_MAP: dict[str, AIArchetype] = {
 
 # Base flee chance percentage
 _BASE_FLEE_CHANCE = 50
+
+# Share of an attack's damage a defending combatant takes.
+DEFEND_DAMAGE_SCALE = 0.5
 
 
 class CombatContext:
@@ -181,6 +184,10 @@ class CombatContext:
             lambda: deque(maxlen=MAX_ECHO_TURNS)
         )
         self._active_echoes: dict[str, Echo] = {}
+        # Turn count at the start of each turn the player has taken, oldest
+        # first. A read model, rebuilt from events on rewind replay; lets a
+        # rewind be measured in the player's own turns.
+        self._player_turn_starts: list[int] = []
 
         # Combat state
         self._phase = CombatPhase.INITIALIZING
@@ -335,6 +342,7 @@ class CombatContext:
                 combatant_id=self.player.id,
                 new_total=self.player.boost_points,
                 amount_gained=actual_gained,
+                round_number=self._round_number,
             )
         )
 
@@ -464,6 +472,8 @@ class CombatContext:
         if self._phase != CombatPhase.AWAITING_PLAYER_INPUT:
             raise RuntimeError(f"Cannot submit player action in phase {self._phase.name}")
 
+        self.player.is_defending = False
+        self._player_turn_starts.append(self._total_turns)
         self._phase = CombatPhase.EXECUTING_TURN
         self._total_turns += 1
         msgs: list[str] = []
@@ -486,6 +496,7 @@ class CombatContext:
                 # player's to take.
                 self._phase = CombatPhase.AWAITING_PLAYER_INPUT
                 self._total_turns -= 1
+                self._player_turn_starts.pop()
                 raise
             if isinstance(cast_result, EchoCastResult):
                 msgs.extend(self._logger.log_echo_spawned(self.player, cast_result.duration))
@@ -517,6 +528,7 @@ class CombatContext:
             List of log messages from the turn.
         """
         msgs: list[str] = []
+        enemy.is_defending = False
 
         # Broken enemies skip their turn
         if enemy.is_broken:
@@ -690,6 +702,12 @@ class CombatContext:
         )
 
         # Apply damage to target
+        if target.is_defending:
+            # A defender takes half, rounded down, never less than 1. The
+            # halved figure is what is stored and what replay recomputes.
+            damage_result.damage = max(1, damage_result.damage // 2)
+            damage_result.multipliers["defend"] = DEFEND_DAMAGE_SCALE
+
         entity_result = target.take_damage(damage_result.damage, damage_type)
 
         # Log the attack (use entity_result for shield break info)
@@ -755,6 +773,7 @@ class CombatContext:
         Returns:
             List of log messages.
         """
+        actor.is_defending = True
         msgs = self._logger.log_defend(actor)
 
         self._emit_event(
@@ -971,6 +990,45 @@ class CombatContext:
         actor = actor or self.player
         turns_back = self._total_turns - target_turn
         return self._temporal.rewind(self, actor, turns=turns_back)
+
+    @property
+    def player_turns_taken(self) -> int:
+        """Return how many of the player's own turns a rewind could undo."""
+        return len(self._player_turn_starts)
+
+    def rewind_player_turns(self, count: int = 1) -> RewindResult | CounterStopResult:
+        """
+        Rewind to the start of one of the player's own earlier turns.
+
+        ``count=1`` returns to the start of the turn the player took most
+        recently, undoing that turn and everything since. The cost is 1
+        charge per player turn undone, whatever happened in between.
+
+        Args:
+            count: How many of the player's own turns to undo (>= 1).
+
+        Returns:
+            RewindResult, or CounterStopResult if the cast was countered.
+
+        Raises:
+            ValueError: If ``count < 1``.
+            RewindBoundaryError: If the player has taken fewer than
+                ``count`` turns.
+            InsufficientChargeError: If the player holds less than
+                ``count`` charge.
+            RewindUnavailableError: If combat phase forbids rewind.
+            RewindReplayError: If event replay fails mid-flight.
+        """
+        if count < 1:
+            raise ValueError(f"count must be at least 1, got {count}")
+        if count > len(self._player_turn_starts):
+            raise RewindBoundaryError(
+                f"Cannot rewind {count} of your turns: only {len(self._player_turn_starts)} taken"
+            )
+        target_turn = self._player_turn_starts[-count]
+        return self._temporal.rewind(
+            self, self.player, turns=self._total_turns - target_turn, cost=count
+        )
 
     def _emit_event(self, event: GameEvent) -> None:
         """

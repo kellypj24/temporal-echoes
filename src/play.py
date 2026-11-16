@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from src.content import Encounter, get_encounter, list_encounters
 from src.core.combat import CombatContext, CombatOutcome
 from src.core.persistence import EventStore
+from src.core.temporal import ArchetypeCounterPolicy, CounterStopPolicy, TemporalAnnouncement
 from src.states.combat_cli import CombatCLI
 from src.ui.console import ConsoleRenderer
 
@@ -51,6 +52,7 @@ def build_combat(
     seed: int,
     event_store: EventStore,
     player_hp: int | None = None,
+    counter_policy: CounterStopPolicy | None = None,
 ) -> CombatContext:
     """
     Instantiate an encounter as a live combat.
@@ -60,6 +62,8 @@ def build_combat(
         seed: RNG seed; the same seed and inputs replay the same fight.
         event_store: Store that receives every combat event.
         player_hp: The player's starting HP; None means full.
+        counter_policy: Who answers Counter-Stop windows; None means
+            each enemy's AI decides and the player is never asked.
 
     Returns:
         A `CombatContext` ready for its first round.
@@ -74,6 +78,7 @@ def build_combat(
         event_store=event_store,
         session_id=f"play-{run_id}",
         timeline_id="main",
+        counter_policy=counter_policy,
     )
 
 
@@ -102,13 +107,23 @@ def play(
         How the fight ended.
     """
     store = event_store if event_store is not None else EventStore(":memory:")
+
+    # The policy needs the controller to ask the player, and the controller
+    # needs the combat the policy belongs to; the list breaks the cycle.
+    controller: list[CombatCLI] = []
+
+    def ask_player(announcement: TemporalAnnouncement) -> bool:
+        return controller[0].ask_counter(announcement)
+
     combat = build_combat(
         encounter,
         encounter.seed if seed is None else seed,
         store,
         player_hp=player_hp,
+        counter_policy=ArchetypeCounterPolicy(ask_player=ask_player),
     )
     cli = CombatCLI(combat, ConsoleRenderer(write=write, color=color), read_input=read_input)
+    controller.append(cli)
     outcome = cli.run(title=encounter.title, intro=encounter.intro)
     return PlayResult(
         encounter_id=encounter.id,

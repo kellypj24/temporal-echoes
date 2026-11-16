@@ -290,8 +290,9 @@ class TestRewindCounterInterop:
         # Both the caster's and responder's CHARGE_SPENT for the countered
         # cast (and every round after target_turn) are excluded from the
         # replay window — only the single regen tick from round 1 (before
-        # target_turn) survives, for both sides.
-        assert combat.player.temporal_charge == 1
+        # target_turn) survives, for both sides. The rewind's own cost then
+        # stays spent, taking the caster's single charge.
+        assert combat.player.temporal_charge == 0
         assert enemy.temporal_charge == 1  # never spent on this branch
 
         trigger_events = [
@@ -302,8 +303,8 @@ class TestRewindCounterInterop:
     def test_rewind_after_countered_cast_replays_charge_spends(self) -> None:
         """
         Rewinding to a turn *after* a countered cast replays both
-        CHARGE_SPENTs; live charge totals match the pre-rewind values
-        bit-exactly.
+        CHARGE_SPENTs; charge totals match the pre-rewind values, less the
+        rewinding caster's own cost.
         """
         player = create_test_player(
             hp=100_000, max_hp=100_000, temporal_charge=0, max_temporal_charge=5, attack=50
@@ -328,7 +329,8 @@ class TestRewindCounterInterop:
         combat.player.temporal_charge = combat._total_turns - target_turn  # rewind's own spend
         combat.rewind_to_turn(target_turn)
 
-        assert combat.player.temporal_charge == player_charge_before
+        # Rebuilt to the pre-rewind value, less the 1 charge this rewind cost.
+        assert combat.player.temporal_charge == player_charge_before - 1
         assert enemy.temporal_charge == enemy_charge_before
 
 

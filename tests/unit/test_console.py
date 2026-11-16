@@ -83,3 +83,18 @@ def test_renderer_imports_no_game_rules() -> None:
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
     assert not {m for m in modules if m.startswith(("src.core", "src.states"))}
+
+
+def test_board_shows_enemy_charge_and_who_is_defending() -> None:
+    screen = Screen()
+    player, enemies = get_encounter("crossroads").build()
+    enemies[0].temporal_charge = 2
+    enemies[0].is_defending = True
+    player.is_defending = True
+
+    ConsoleRenderer(write=screen).status(player, enemies)
+
+    first, second = (line for line in screen.lines if "Raider" in line)
+    assert "TC ◆◆◇" in first and first.rstrip().endswith("DEF")
+    assert "TC ◇◇◇" in second and "DEF" not in second
+    assert next(line for line in screen.lines if "Kael" in line).rstrip().endswith("DEF")

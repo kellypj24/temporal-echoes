@@ -86,9 +86,9 @@ class Enemy(Combatant):
         if damage < 0:
             raise ValueError(f"Damage cannot be negative, got {damage}")
 
-        # Apply break damage multiplier FIRST (if already broken from previous hit)
-        break_multiplier = 1.5 if self.is_broken else 1.0
-        actual_damage = int(damage * break_multiplier)
+        # The Break bonus is applied once, by DamageCalculator, before the
+        # damage reaches here. Applying it again would make it 2.25x.
+        actual_damage = damage
 
         # Check weakness
         weakness_hit = damage_type in self.weaknesses
@@ -113,7 +113,7 @@ class Enemy(Combatant):
             weakness_hit=weakness_hit,
             shield_broken=shield_broken,
             is_critical=False,  # Critical hits are calculated in damage calculator
-            multipliers={"break": break_multiplier},
+            multipliers={},
         )
 
     def trigger_break(self) -> None:

@@ -8,9 +8,15 @@ encounter from the same spec and seed produces an identical fight.
 
 Tuning notes (damage formula is `ATK * 100 / (DEF * 0.5 + 10)`, times a
 0.85–1.0 variance roll):
-- Encounters are tuned so a player who only ever attacks wins the first
-  fight, is pressured in the second, and needs Boost Points or a temporal
-  ability in the third.
+- The sequence is tuned against the scripted players in
+  `tests/fixtures/autopilot.py`; `just balance` prints their win rates and
+  `tests/integration/test_balance.py` holds the targets. Attacking the
+  first enemy every turn wins the first two fights and loses the gate.
+  Good targeting and boosts alone clear the gate about a third of the
+  time; adding Echo Cast, the rewind bait and Counter-Stop, about three
+  quarters.
+- At the gate the acolytes hit harder than the boss and die faster, so
+  who is attacked first matters.
 - Every enemy is weak to PHYSICAL so a basic attack can reach the Break
   System without an elemental skill tree (skills land in Phase 5).
 """
@@ -182,7 +188,7 @@ _SUNDIAL = Encounter(
             id="sentry_1",
             name="Clockwork Sentry",
             level=4,
-            max_hp=340,
+            max_hp=680,
             attack=34,
             defense=32,
             speed=22,
@@ -214,7 +220,7 @@ _CROSSROADS = Encounter(
             id="raider_1",
             name="Timeworn Raider",
             level=6,
-            max_hp=260,
+            max_hp=520,
             attack=30,
             defense=34,
             speed=28,
@@ -225,7 +231,7 @@ _CROSSROADS = Encounter(
             id="raider_2",
             name="Hollow Raider",
             level=6,
-            max_hp=260,
+            max_hp=520,
             attack=30,
             defense=34,
             speed=24,
@@ -257,8 +263,8 @@ _GATE = Encounter(
             id="chronomancer",
             name="The Chronomancer",
             level=12,
-            max_hp=380,
-            attack=30,
+            max_hp=3750,
+            attack=27,
             defense=40,
             speed=34,
             shield_points=3,
@@ -268,8 +274,8 @@ _GATE = Encounter(
             id="acolyte_1",
             name="Gate Acolyte",
             level=8,
-            max_hp=150,
-            attack=22,
+            max_hp=500,
+            attack=28,
             defense=28,
             speed=26,
             shield_points=1,
@@ -279,8 +285,8 @@ _GATE = Encounter(
             id="acolyte_2",
             name="Gate Acolyte",
             level=8,
-            max_hp=150,
-            attack=22,
+            max_hp=500,
+            attack=28,
             defense=28,
             speed=20,
             shield_points=1,

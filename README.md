@@ -128,6 +128,7 @@ temporal-echoes/
 | `just fmt` | Auto-fix ruff lint + format |
 | `just play` | Play the terminal game: three fights in order, wounds carried |
 | `just play <id>` | Play one fight (`just play --list` for ids) |
+| `just balance [seeds]` | Win rates of the scripted players per encounter |
 | `just run` | Run the Phase 1 architecture demo loop |
 | `just dbt-run` | Run dbt analytics models |
 | `just docker-up` | Start Docker containers |

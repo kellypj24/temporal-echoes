@@ -124,7 +124,7 @@ class TestScenario3ShieldBreak:
     """Scenario 3: Break system with 1.5x break damage."""
 
     def test_shield_break_bonus_damage(self) -> None:
-        """Hit weakness until shield breaks, next hit gets 1.5x break damage."""
+        """Hit weakness until shield breaks; the shield-break event is stored."""
         enemy = create_test_enemy(
             hp=500,
             max_hp=500,
@@ -139,9 +139,10 @@ class TestScenario3ShieldBreak:
         assert result1.shield_broken
         assert enemy.is_broken
 
-        # Next hit while broken gets 1.5x multiplier
+        # The entity applies damage as given: the 1.5x Break bonus is the
+        # calculator's, applied once (tests/integration/test_balance_rules.py).
         result2 = enemy.take_damage(100, DamageType.PHYSICAL)
-        assert result2.damage == 150  # 100 * 1.5
+        assert result2.damage == 100
 
         # Verify SHIELD_BROKEN event in full combat context
         store = EventStore(":memory:")

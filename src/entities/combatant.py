@@ -60,6 +60,8 @@ class Combatant(ABC):
         temporal_charge: Current temporal charge (0 to max_temporal_charge)
         max_temporal_charge: Maximum temporal charge (default 3, matching
             the maximum rewind window from Phase 3 design)
+        is_defending: Whether the combatant defended on its last turn;
+            attacks against it are halved until its next turn begins
     """
 
     id: str
@@ -72,6 +74,7 @@ class Combatant(ABC):
     speed: int
     temporal_charge: int = field(default=0, kw_only=True)
     max_temporal_charge: int = field(default=3, kw_only=True)
+    is_defending: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         """Validate combatant stats after initialization."""

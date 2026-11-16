@@ -18,10 +18,12 @@ from src.core.ai import CombatAction
 from src.core.combat import CombatContext, CombatOutcome, CombatPhase
 from src.core.exceptions import TemporalError
 from src.core.temporal import (
+    COUNTER_STOP_COST,
     ECHO_CAST_COST,
     MAX_ECHO_TURNS,
     CounterStopResult,
     RewindResult,
+    TemporalAnnouncement,
 )
 from src.entities import Enemy, Player
 from src.ui.console import ConsoleRenderer
@@ -39,7 +41,8 @@ _ROUND_BOUNDARY_PHASES = frozenset(
 PROMPT_COMMAND = "  > "
 PROMPT_BP = "  BP to spend (1-{maximum}, blank to cancel): "
 PROMPT_ECHO = "  Echo window — replay your last N actions (1-{maximum}, blank = 1): "
-PROMPT_REWIND = "  Rewind how many turns (1-{maximum}, blank = 1)? "
+PROMPT_REWIND = "  Rewind how many of your turns (1-{maximum}, blank = 1)? "
+PROMPT_COUNTER = "  Counter-Stop it for {cost} charge? [y/N] "
 PROMPT_TARGET = "  Target (number, blank to cancel): "
 
 _MENU: tuple[tuple[str, str], ...] = (
@@ -58,9 +61,9 @@ _HELP: tuple[str, ...] = (
     "b    Boosted attack: spend 1-3 BP for 1.5x / 2.0x / 2.5x damage.",
     "d    Defend: halve incoming damage until your next turn.",
     f"e    Echo Cast ({ECHO_CAST_COST} charge): a past-self replays your last "
-    f"1-{MAX_ECHO_TURNS} actions at reduced damage.",
-    "r    Rewind (1 charge per turn): jump back on a new timeline branch.",
-    "     Rewind does not cost your turn — you still act afterwards.",
+    f"1-{MAX_ECHO_TURNS} actions at full damage.",
+    "r    Rewind (1 charge per turn of yours): return to the start of an earlier",
+    "     turn of yours and choose again. It does not cost your turn.",
     "f    Flee the encounter.",
     "s    Redraw the status board.",
     "q    Quit to the shell.",
@@ -300,8 +303,9 @@ class CombatCLI:
         """
         Rewind combat, then hand the turn back to the player.
 
-        Rewind is not a `CombatAction`: it goes straight to `TemporalSystem`
-        and leaves combat awaiting player input at the earlier turn, so the
+        Rewind is not a `CombatAction`: it is measured in the player's own
+        turns and leaves combat awaiting player input at the start of the
+        earlier one, so the
         player still acts this turn. That stays true when it is countered —
         the charge is spent, the jump does not happen, and the turn is
         still theirs.
@@ -313,17 +317,21 @@ class CombatCLI:
         if player.temporal_charge < 1:
             self._renderer.error("No temporal charge — you gain 1 at the start of each round.")
             return TurnSignal.REPROMPT
+        maximum = min(player.temporal_charge, self._combat.player_turns_taken)
+        if maximum < 1:
+            self._renderer.error("Nothing to rewind — you have not taken a turn yet.")
+            return TurnSignal.REPROMPT
 
-        raw = self._read_input(PROMPT_REWIND.format(maximum=player.temporal_charge)).strip()
-        turns = 1
+        raw = self._read_input(PROMPT_REWIND.format(maximum=maximum)).strip()
+        count = 1
         if raw:
-            if not raw.isdigit() or not 1 <= int(raw) <= player.temporal_charge:
-                self._renderer.error(f"Enter a number from 1 to {player.temporal_charge}.")
+            if not raw.isdigit() or not 1 <= int(raw) <= maximum:
+                self._renderer.error(f"Enter a number from 1 to {maximum}.")
                 return TurnSignal.REPROMPT
-            turns = int(raw)
+            count = int(raw)
 
         try:
-            result = self._combat.temporal_system.rewind(self._combat, player, turns=turns)
+            result = self._combat.rewind_player_turns(count)
         except TemporalError as exc:
             self._renderer.error(str(exc))
             return TurnSignal.REPROMPT
@@ -331,13 +339,31 @@ class CombatCLI:
         self._flush()
         if isinstance(result, RewindResult):
             self._renderer.notice(
-                f"Time folds back {result.from_turn - result.to_turn} turn(s) "
-                f"onto branch {result.new_branch_id} "
-                f"({result.events_replayed} events replayed)."
+                f"Time folds back to the start of your turn {count} ago, "
+                f"onto branch {result.new_branch_id}. {result.charge_spent} charge spent."
             )
         else:
             self._render_counter(result)
         return TurnSignal.REPROMPT
+
+    def ask_counter(self, announcement: TemporalAnnouncement) -> bool:
+        """
+        Ask the player whether to Counter-Stop an enemy's announced cast.
+
+        Called by the counter policy in the middle of an enemy's turn,
+        only when the player holds the charge to respond.
+
+        Args:
+            announcement: The enemy cast being announced.
+
+        Returns:
+            True if the player chooses to counter.
+        """
+        self._flush()
+        what = "rewind time" if announcement.ability == "rewind" else "cast Echo"
+        self._renderer.notice(f"{self._name_of(announcement.caster_id)} begins to {what}.")
+        answer = self._read_input(PROMPT_COUNTER.format(cost=COUNTER_STOP_COST)).strip().lower()
+        return answer in {"y", "yes"}
 
     # --- Helpers ----------------------------------------------------------
 

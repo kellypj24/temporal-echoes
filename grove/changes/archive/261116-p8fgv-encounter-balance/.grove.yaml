@@ -1,0 +1,5 @@
+title: "Encounter balance"
+created: 2026-11-16T15:00:00Z
+description: Rule fixes and tuning so attack-only loses the gate and time abilities decide it.
+schema: default
+base: 6bb1db9f58c3793ac9644b51abd15c29cbec5758
